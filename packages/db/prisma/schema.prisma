@@ -1,0 +1,136 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  EMPLOYEE
+}
+
+enum AppointmentStatus {
+  PENDING
+  ASSIGNED
+  TRAVELING
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  RESCHEDULED
+}
+
+enum Urgency {
+  LOW
+  MEDIUM
+  HIGH
+  EMERGENCY
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  password      String
+  name          String
+  role          Role      @default(EMPLOYEE)
+  phone         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  employee      Employee?
+  auditLogs     AuditLog[]
+}
+
+model Clinic {
+  id                String        @id @default(cuid())
+  clinicName        String
+  doctorName        String
+  address           String
+  phone             String
+  email             String
+  preferredTimings  String?
+  notes             String?
+  latitude          Float?
+  longitude         Float?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  appointments      Appointment[]
+}
+
+model Employee {
+  id              String        @id @default(cuid())
+  userId          String        @unique
+  user            User          @relation(fields: [userId], references: [id])
+  specialization  String[]
+  availability    Json?         // Structured JSON for daily availability
+  currentLat      Float?
+  currentLng      Float?
+  lastLocationAt  DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  appointments    Appointment[] @relation("EmployeeAppointments")
+}
+
+model Appointment {
+  id            String            @id @default(cuid())
+  clinicId      String
+  clinic        Clinic            @relation(fields: [clinicId], references: [id])
+  employeeId    String?
+  employee      Employee?         @relation("EmployeeAppointments", fields: [employeeId], references: [id])
+  patientName   String
+  scanType      String
+  urgency       Urgency           @default(MEDIUM)
+  date          DateTime
+  startTime     DateTime
+  endTime       DateTime?
+  status        AppointmentStatus @default(PENDING)
+  notes         String?
+  photos        String[]          // URLs to stored images
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  patients      Patient[]
+  timeline      ActivityTimeline[]
+}
+
+model Patient {
+  id            String      @id @default(cuid())
+  name          String
+  appointmentId String
+  appointment   Appointment @relation(fields: [appointmentId], references: [id])
+  createdAt     DateTime    @default(now())
+}
+
+model Notification {
+  id              String    @id @default(cuid())
+  recipientId     String
+  message         String
+  type            String    // WHATSAPP, PUSH, EMAIL
+  deliveryStatus  String    // PENDING, SENT, FAILED
+  error           String?
+  createdAt       DateTime  @default(now())
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  action    String
+  entity    String
+  entityId  String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+}
+
+model ActivityTimeline {
+  id            String      @id @default(cuid())
+  appointmentId String
+  appointment   Appointment @relation(fields: [appointmentId], references: [id])
+  status        AppointmentStatus
+  notes         String?
+  createdAt     DateTime    @default(now())
+}

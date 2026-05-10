@@ -1,0 +1,23 @@
+{
+  "name": "scanflow-ai",
+  "private": true,
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "db:push": "turbo run db:push",
+    "db:generate": "turbo run db:generate"
+  },
+  "devDependencies": {
+    "turbo": "^1.13.0",
+    "typescript": "^5.4.0",
+    "prettier": "^3.2.5",
+    "eslint": "^8.57.0"
+  },
+  "packageManager": "npm@10.2.4",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ]
+}
