@@ -9,6 +9,7 @@ import {
   PlusCircle,
   Bell,
   User,
+  LogOut,
   Loader2
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
@@ -100,13 +101,43 @@ export default function ClinicDashboard() {
             <Link href="/clinic/history" className="text-sm font-medium text-slate-500 hover:text-slate-900">History</Link>
           </div>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-4 relative">
           <button className="p-2 text-slate-400 hover:text-slate-900 relative">
             <Bell className="w-5 h-5" />
             <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
           </button>
-          <div className="w-8 h-8 bg-slate-200 rounded-full flex items-center justify-center text-slate-600">
-            <User className="w-4 h-4" />
+          
+          <div className="relative group">
+            <button className="w-8 h-8 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center hover:bg-blue-100 transition-colors">
+              <User className="w-4 h-4" />
+            </button>
+            
+            {/* Profile Dropdown */}
+            <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden hidden group-hover:block animate-in fade-in slide-in-from-top-2 duration-200 z-50">
+              <div className="p-4 border-b border-slate-50">
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Account</p>
+                <p className="text-sm font-bold text-slate-900 truncate">{user?.name}</p>
+              </div>
+              <div className="p-2">
+                <button 
+                  onClick={() => {
+                    const { logout } = useUser(); // Using it inside here won't work easily, better use the one from top
+                  }}
+                  className="hidden"
+                >
+                </button>
+                <button 
+                  onClick={() => {
+                    localStorage.removeItem('scanflow_user');
+                    localStorage.removeItem('scanflow_token');
+                    window.location.href = '/auth/login';
+                  }}
+                  className="w-full text-left px-3 py-2 text-sm font-medium text-rose-600 hover:bg-rose-50 rounded-lg transition-colors flex items-center gap-2"
+                >
+                  <LogOut className="w-4 h-4" /> Sign Out
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </nav>

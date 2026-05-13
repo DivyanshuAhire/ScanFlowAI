@@ -6,22 +6,44 @@ export class SchedulingEngineService {
   /**
    * STEP 1: Filter Valid Slots
    */
-  static async getAvailableSlots(companyId: string, date: Date, clinicId: string) {
-    const clinic = await Clinic.findById(clinicId);
-    if (!clinic) throw new Error('Clinic not found');
-
-    const officeTimings = await OfficeTimings.findOne({ companyId });
-    if (!officeTimings) throw new Error('Office timings not configured');
+  static async getAvailableSlots(companyId: string, date: Date, clinicId?: string) {
+    let officeTimings = await OfficeTimings.findOne({ companyId });
+    
+    // Fallback to defaults if not configured
+    if (!officeTimings) {
+      officeTimings = {
+        openingTime: '09:00',
+        closingTime: '18:00',
+        appointmentInterval: 30,
+        holidays: ['Sunday'],
+        blackoutTimings: []
+      } as any;
+    }
 
     // Check if day is a holiday
     const dayName = format(date, 'EEEE');
-    if (officeTimings.holidays.includes(dayName) || clinic.workingHours.holidays.includes(dayName)) {
+    if (officeTimings.holidays.includes(dayName)) {
       return [];
     }
 
-    const slots: string[] = [];
+    const technicians = await Employee.find({ companyId, status: 'ACTIVE', isDeleted: false });
+    const totalTechs = technicians.length;
+    const isHoliday = officeTimings.holidays.includes(dayName);
+
+    if (isHoliday) {
+      return [];
+    }
+
+    const slots: { time: string; available: boolean; remaining: number; reason?: string }[] = [];
     let currentTime = parse(officeTimings.openingTime, 'HH:mm', date);
     const endTime = parse(officeTimings.closingTime, 'HH:mm', date);
+
+    // Fetch all appointments for this day to check capacity
+    const dayAppointments = await Appointment.find({
+      companyId,
+      appointmentDate: { $gte: startOfDay(date), $lte: endOfDay(date) },
+      status: { $in: [AppointmentStatus.ASSIGNED, AppointmentStatus.CONFIRMED, AppointmentStatus.IN_PROGRESS] }
+    });
 
     while (currentTime < endTime) {
       const slotStr = format(currentTime, 'HH:mm');
@@ -34,7 +56,24 @@ export class SchedulingEngineService {
       });
 
       if (!isBlackout) {
-        slots.push(slotStr);
+        // Capacity check: how many techs are booked during this time?
+        const slotApps = dayAppointments.filter(app => {
+          const appStart = parse(app.timeSlot, 'HH:mm', date);
+          const appEnd = addMinutes(appStart, app.duration);
+          return (currentTime >= appStart && currentTime < appEnd);
+        });
+
+        const bookedCount = slotApps.length;
+        const clinicAlreadyBooked = clinicId && slotApps.some(app => app.clinicId?.toString() === clinicId);
+
+        slots.push({
+          time: slotStr,
+          available: totalTechs > 0 && bookedCount < totalTechs && !clinicAlreadyBooked,
+          remaining: Math.max(0, totalTechs - bookedCount),
+          reason: clinicAlreadyBooked 
+            ? 'Clinic already has a scan at this time' 
+            : (totalTechs === 0 ? 'No active technicians' : (bookedCount >= totalTechs ? 'Fully booked' : undefined))
+        });
       }
       
       currentTime = addMinutes(currentTime, officeTimings.appointmentInterval);
