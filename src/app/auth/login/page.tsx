@@ -1,11 +1,54 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Mail, Lock, ArrowRight, ShieldCheck, Hospital } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Mail, Lock, ArrowRight, ShieldCheck, Hospital, Loader2 } from 'lucide-react';
+import axios from 'axios';
+import { toast } from 'sonner';
+import { useUser } from '@/context/UserContext';
 import { cn } from '@/lib/utils';
 
 export default function LoginPage() {
+  const router = useRouter();
+  const { login } = useUser();
   const [type, setType] = useState<'COMPANY' | 'CLINIC'>('COMPANY');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !password) {
+      toast.error('Please fill in all fields');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const res = await axios.post('/api/auth/login', { email, password });
+      
+      if (res.data.requiresVerification) {
+        toast.info('OTP required for verification');
+        router.push(`/auth/verify?email=${encodeURIComponent(email)}`);
+        return;
+      }
+
+      toast.success('Login successful!');
+      login(res.data.user, res.data.token);
+      
+      const role = res.data.user.role;
+      if (role === 'SUPER_ADMIN') router.push('/superadmin/dashboard');
+      else if (role === 'COMPANY_ADMIN') router.push('/company/dashboard');
+      else if (role === 'CLINIC_USER') router.push('/clinic/dashboard');
+      else if (role === 'EMPLOYEE') router.push('/employee/dashboard');
+      else router.push('/');
+
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || 'Invalid credentials');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
@@ -32,7 +75,6 @@ export default function LoginPage() {
             <p className="text-sm font-medium text-blue-200">Trusted by 100+ diagnostic companies worldwide.</p>
           </div>
 
-          {/* Decorative shapes */}
           <div className="absolute -bottom-20 -left-20 w-64 h-64 bg-blue-500 rounded-full opacity-50 blur-3xl"></div>
           <div className="absolute top-1/2 -right-10 w-40 h-40 bg-indigo-500 rounded-full opacity-30 blur-2xl"></div>
         </div>
@@ -44,7 +86,6 @@ export default function LoginPage() {
             <p className="text-slate-500 font-medium">Please enter your details to sign in.</p>
           </div>
 
-          {/* Type Toggle */}
           <div className="flex p-1 bg-slate-100 rounded-xl mb-8">
             <button 
               onClick={() => setType('COMPANY')}
@@ -66,14 +107,16 @@ export default function LoginPage() {
             </button>
           </div>
 
-          <form className="space-y-6">
+          <form onSubmit={handleSubmit} className="space-y-6">
             <div className="space-y-2">
               <label className="text-sm font-bold text-slate-700">Email Address</label>
               <div className="relative">
                 <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
                 <input 
                   type="email" 
-                  placeholder="admin@company.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder={type === 'COMPANY' ? "admin@scanflow.com" : "clinic@clinic.com"}
                   className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-medium"
                 />
               </div>
@@ -82,20 +125,26 @@ export default function LoginPage() {
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <label className="text-sm font-bold text-slate-700">Password</label>
-                <a href="#" className="text-xs font-bold text-blue-600 hover:underline">Forgot password?</a>
+                <button type="button" className="text-xs font-bold text-blue-600 hover:underline">Forgot password?</button>
               </div>
               <div className="relative">
                 <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
                 <input 
                   type="password" 
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
                   className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-medium"
                 />
               </div>
             </div>
 
-            <button className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-slate-800 transition-all active:scale-[0.98] shadow-lg shadow-slate-200">
-              Sign In <ArrowRight className="w-5 h-5" />
+            <button 
+              type="submit"
+              disabled={loading}
+              className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-slate-800 transition-all active:scale-[0.98] shadow-lg shadow-slate-200 disabled:opacity-50"
+            >
+              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <>Sign In <ArrowRight className="w-5 h-5" /></>}
             </button>
           </form>
 

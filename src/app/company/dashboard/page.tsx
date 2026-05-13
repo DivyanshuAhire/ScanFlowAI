@@ -1,7 +1,8 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Sidebar } from '@/components/layout/Sidebar';
+import { useRouter } from 'next/navigation';
 import { 
   Users, 
   CalendarCheck, 
@@ -38,8 +39,37 @@ const StatCard = ({ title, value, icon: Icon, color, trend, loading }: any) => (
 );
 
 export default function CompanyDashboard() {
-  const { user } = useUser();
-  const { stats, loading } = useCompanyStats(user?.companyId || null);
+  const { user, loading: authLoading } = useUser();
+  const router = useRouter();
+  const { stats, loading: statsLoading } = useCompanyStats(user?.companyId || null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (authLoading) return;
+    
+    if (!user) {
+      router.push('/auth/login');
+      return;
+    }
+
+    if (!user.companyId) {
+      setLoading(false);
+      return;
+    }
+
+    setLoading(statsLoading);
+  }, [user, authLoading, statsLoading, router]);
+
+  if (authLoading || (loading && !stats)) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-slate-50">
+        <div className="text-center">
+          <Loader2 className="w-10 h-10 text-blue-600 animate-spin mx-auto mb-4" />
+          <p className="text-slate-500 font-medium animate-pulse">Syncing Session...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen bg-slate-50">

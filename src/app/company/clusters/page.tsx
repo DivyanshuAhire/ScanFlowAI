@@ -1,9 +1,69 @@
-import React from 'react';
+'use client';
+
+import React, { useState, useEffect } from 'react';
 import { Sidebar } from '@/components/layout/Sidebar';
-import { ClusterMap } from '@/components/dashboard/ClusterMap';
-import { Plus, Search, Map as MapIcon } from 'lucide-react';
+import { 
+  Plus, 
+  Map as MapIcon, 
+  Layers, 
+  Activity,
+  MoreVertical,
+  Loader2,
+  Navigation
+} from 'lucide-react';
+import { useUser } from '@/context/UserContext';
+import { useRouter } from 'next/navigation';
+import axios from 'axios';
+import { cn } from '@/lib/utils';
+import { CreateClusterModal } from '@/components/modals/CreateClusterModal';
 
 export default function ClustersPage() {
+  const { user, loading: authLoading } = useUser();
+  const router = useRouter();
+  const [clusters, setClusters] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  const fetchClusters = async () => {
+    if (!user?.companyId) return;
+    try {
+      setLoading(true);
+      const res = await axios.get(`/api/clusters?companyId=${user.companyId}`);
+      setClusters(res.data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (authLoading) return;
+    
+    if (!user) {
+      router.push('/auth/login');
+      return;
+    }
+
+    if (!user.companyId) {
+      setLoading(false);
+      return;
+    }
+
+    fetchClusters();
+  }, [user, authLoading, router]);
+
+  if (authLoading || (loading && clusters.length === 0 && user?.companyId)) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-slate-50">
+        <div className="text-center">
+          <Loader2 className="w-10 h-10 text-blue-600 animate-spin mx-auto mb-4" />
+          <p className="text-slate-500 font-medium animate-pulse">Syncing Session...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-h-screen bg-slate-50">
       <Sidebar />
@@ -11,61 +71,105 @@ export default function ClustersPage() {
       <main className="flex-1 ml-64 p-8">
         <header className="flex items-center justify-between mb-8">
           <div>
-            <h2 className="text-2xl font-bold text-slate-900">Cluster Management</h2>
-            <p className="text-slate-500">Visualize and optimize clinic groupings.</p>
+            <h2 className="text-2xl font-bold text-slate-900">Cluster Visualization</h2>
+            <p className="text-slate-500">Geospatial grouping of clinics for route optimization.</p>
           </div>
-          <div className="flex gap-3">
-            <button className="px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium hover:bg-slate-50 transition-colors flex items-center gap-2">
-              <MapIcon className="w-4 h-4" /> View Map
-            </button>
-            <button className="btn-primary flex items-center gap-2">
-              <Plus className="w-4 h-4" /> Add Cluster
-            </button>
-          </div>
+          <button 
+            onClick={() => setIsModalOpen(true)}
+            className="btn-primary flex items-center gap-2"
+          >
+            <Plus className="w-4 h-4" /> Create Cluster
+          </button>
         </header>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2">
-            <ClusterMap />
-          </div>
+        <CreateClusterModal 
+          isOpen={isModalOpen} 
+          onClose={() => setIsModalOpen(false)} 
+          companyId={user?.companyId}
+          onSuccess={fetchClusters}
+        />
 
-          <div className="card-premium">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="font-bold text-slate-900">Cluster List</h3>
-              <Search className="w-4 h-4 text-slate-400" />
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
+          <div className="lg:col-span-2 card-premium h-[500px] relative overflow-hidden bg-slate-900">
+            {/* Mock Map Background */}
+            <div className="absolute inset-0 opacity-20 pointer-events-none">
+              <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                  <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+                    <path d="M 40 0 L 0 0 0 40" fill="none" stroke="white" strokeWidth="0.5"/>
+                  </pattern>
+                </defs>
+                <rect width="100%" height="100%" fill="url(#grid)" />
+              </svg>
             </div>
-            
-            <div className="space-y-4">
-              {[
-                { name: 'Andheri East', distance: '12 KM', clinics: 5, color: 'bg-blue-600' },
-                { name: 'Powai', distance: '8 KM', clinics: 3, color: 'bg-indigo-600' },
-                { name: 'Bandra West', distance: '15 KM', clinics: 8, color: 'bg-emerald-600' },
-                { name: 'Malad West', distance: '22 KM', clinics: 4, color: 'bg-rose-500' },
-              ].map((c) => (
-                <div key={c.name} className="flex items-center justify-between p-3 rounded-lg border border-slate-100 hover:border-blue-200 transition-colors cursor-pointer group">
-                  <div className="flex items-center gap-3">
-                    <div className={cn("w-2 h-2 rounded-full", c.color)}></div>
-                    <div>
-                      <p className="text-sm font-bold text-slate-900">{c.name}</p>
-                      <p className="text-[10px] text-slate-500 font-medium">{c.distance} from HQ</p>
+
+            <div className="relative z-10 p-6 flex items-center justify-between">
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-white/10 backdrop-blur rounded-lg text-white text-xs font-bold border border-white/10">
+                <Navigation className="w-3.5 h-3.5" /> Live Map Simulation
+              </div>
+            </div>
+
+            {/* Interaction Layer */}
+            <div className="absolute inset-0 flex items-center justify-center">
+              {loading ? (
+                <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+              ) : clusters.length === 0 ? (
+                <p className="text-slate-500 font-medium">No clusters to display</p>
+              ) : (
+                clusters.map((cluster, i) => (
+                  <div 
+                    key={cluster._id}
+                    className="absolute group cursor-pointer"
+                    style={{ 
+                      left: `${30 + (i * 15)}%`, 
+                      top: `${40 + (i * 10)}%` 
+                    }}
+                  >
+                    {/* Pulsing ring */}
+                    <div className="absolute -inset-4 bg-blue-500/20 rounded-full animate-ping group-hover:bg-blue-500/40 duration-1000"></div>
+                    {/* Node */}
+                    <div className="relative w-4 h-4 bg-blue-500 border-2 border-white rounded-full shadow-[0_0_15px_rgba(59,130,246,0.8)]"></div>
+                    {/* Label */}
+                    <div className="absolute top-6 left-1/2 -translate-x-1/2 whitespace-nowrap px-2 py-1 bg-white rounded-md shadow-xl opacity-0 group-hover:opacity-100 transition-all">
+                      <p className="text-[10px] font-black text-slate-900">{cluster.name}</p>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <p className="text-xs font-bold text-blue-600">{c.clinics} Clinics</p>
-                    <p className="text-[10px] text-slate-400">View Details</p>
+                ))
+              )}
+            </div>
+          </div>
+
+          <div className="space-y-6">
+            <h3 className="font-bold text-slate-900 flex items-center gap-2">
+              <Layers className="w-5 h-5 text-blue-600" /> Active Clusters
+            </h3>
+            {loading ? (
+              <div className="flex justify-center py-10">
+                <Loader2 className="w-6 h-6 text-blue-600 animate-spin" />
+              </div>
+            ) : (
+              clusters.map(cluster => (
+                <div key={cluster._id} className="card-premium hover:border-blue-200 transition-all cursor-pointer">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-xs font-black text-blue-600 uppercase tracking-tighter">Cluster #{cluster.name.slice(-1)}</span>
+                    <button className="text-slate-300 hover:text-slate-600">
+                      <MoreVertical className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <h4 className="font-bold text-slate-900 mb-1">{cluster.name}</h4>
+                  <p className="text-xs text-slate-500 flex items-center gap-1 mb-4">
+                    <Activity className="w-3 h-3" /> {cluster.distanceFromHQ}km from HQ
+                  </p>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-slate-400">Total Clinics</span>
+                    <span className="text-xs font-bold text-slate-900">12</span>
                   </div>
                 </div>
-              ))}
-            </div>
-
-            <button className="w-full mt-8 py-3 text-sm font-bold text-slate-500 border-2 border-dashed border-slate-200 rounded-xl hover:border-blue-300 hover:text-blue-600 transition-all">
-              + Create New Cluster
-            </button>
+              ))
+            )}
           </div>
         </div>
       </main>
     </div>
   );
 }
-
-import { cn } from '@/lib/utils';

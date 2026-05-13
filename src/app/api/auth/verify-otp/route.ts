@@ -36,7 +36,10 @@ export async function POST(req: Request) {
         id: user._id, 
         name: user.name, 
         email: user.email, 
-        role: user.role 
+        role: user.role,
+        companyId: user.companyId,
+        clinicId: user.clinicId,
+        employeeId: user.employeeId
       } 
     }, { status: 200 });
 

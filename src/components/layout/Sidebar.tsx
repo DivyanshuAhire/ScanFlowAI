@@ -9,24 +9,50 @@ import {
   Users, 
   MapPin, 
   Settings, 
-  LogOut,
   Hospital,
-  Truck
+  Truck,
+  ShieldCheck,
+  LogOut
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useUser } from '@/context/UserContext';
+import { useRouter } from 'next/navigation';
 
-const sidebarItems = [
-  { name: 'Dashboard', icon: LayoutDashboard, href: '/company/dashboard' },
-  { name: 'Appointments', icon: Calendar, href: '/company/appointments' },
-  { name: 'Clinics', icon: Hospital, href: '/company/clinics' },
-  { name: 'Employees', icon: Users, href: '/company/employees' },
-  { name: 'Clusters', icon: MapPin, href: '/company/clusters' },
-  { name: 'Routes', icon: Truck, href: '/company/routes' },
-  { name: 'Settings', icon: Settings, href: '/company/settings' },
-];
+const menuConfigs = {
+  SUPER_ADMIN: [
+    { name: 'Global Overview', icon: LayoutDashboard, href: '/superadmin/dashboard' },
+    { name: 'Companies', icon: ShieldCheck, href: '/superadmin/companies' },
+    { name: 'Global Clinics', icon: Hospital, href: '/superadmin/clinics' },
+    { name: 'System Logs', icon: Truck, href: '/superadmin/logs' },
+  ],
+  COMPANY_ADMIN: [
+    { name: 'Dashboard', icon: LayoutDashboard, href: '/company/dashboard' },
+    { name: 'Appointments', icon: Calendar, href: '/company/appointments' },
+    { name: 'Clinics', icon: Hospital, href: '/company/clinics' },
+    { name: 'Employees', icon: Users, href: '/company/employees' },
+    { name: 'Clusters', icon: MapPin, href: '/company/clusters' },
+    { name: 'Routes', icon: Truck, href: '/company/routes' },
+    { name: 'Settings', icon: Settings, href: '/company/settings' },
+  ],
+  CLINIC_USER: [
+    { name: 'Dashboard', icon: LayoutDashboard, href: '/clinic/dashboard' },
+    { name: 'Appointments', icon: Calendar, href: '/clinic/appointments' },
+  ],
+  EMPLOYEE: [
+    { name: 'My Schedule', icon: Calendar, href: '/employee/dashboard' },
+  ]
+};
 
 export const Sidebar = () => {
   const pathname = usePathname();
+  const router = useRouter();
+  const { logout, user } = useUser();
+  const currentMenu = menuConfigs[user?.role as keyof typeof menuConfigs] || [];
+
+  const handleLogout = () => {
+    logout();
+    router.push('/auth/login');
+  };
 
   return (
     <aside className="w-64 h-screen bg-slate-900 text-white flex flex-col fixed left-0 top-0 z-50">
@@ -37,7 +63,7 @@ export const Sidebar = () => {
       </div>
 
       <nav className="flex-1 px-4 space-y-1">
-        {sidebarItems.map((item) => {
+        {currentMenu.map((item: any) => {
           const isActive = pathname === item.href;
           return (
             <Link
@@ -58,7 +84,10 @@ export const Sidebar = () => {
       </nav>
 
       <div className="p-4 border-t border-slate-800">
-        <button className="flex items-center gap-3 px-4 py-3 w-full text-slate-400 hover:text-red-400 hover:bg-slate-800 rounded-lg transition-colors">
+        <button 
+          onClick={handleLogout}
+          className="flex items-center gap-3 px-4 py-3 w-full text-slate-400 hover:text-red-400 hover:bg-slate-800 rounded-lg transition-colors"
+        >
           <LogOut className="w-5 h-5" />
           <span className="font-medium">Logout</span>
         </button>

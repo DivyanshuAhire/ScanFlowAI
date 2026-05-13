@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Calendar, 
   Clock, 
@@ -11,6 +11,7 @@ import {
   User,
   Loader2
 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import { useUser } from '@/context/UserContext';
 import { useClinicAppointments } from '@/hooks/useClinicAppointments';
 import { cn } from '@/lib/utils';
@@ -43,8 +44,37 @@ const AppointmentCard = ({ app }: any) => (
 );
 
 export default function ClinicDashboard() {
-  const { user } = useUser();
-  const { appointments, loading } = useClinicAppointments(user?.clinicId || null);
+  const { user, loading: authLoading } = useUser();
+  const router = useRouter();
+  const { appointments, loading: appointmentsLoading } = useClinicAppointments(user?.clinicId || null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (authLoading) return;
+    
+    if (!user) {
+      router.push('/auth/login');
+      return;
+    }
+
+    if (!user.clinicId) {
+      setLoading(false);
+      return;
+    }
+
+    setLoading(appointmentsLoading);
+  }, [user, authLoading, appointmentsLoading, router]);
+
+  if (authLoading || (loading && appointments.length === 0)) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-slate-50">
+        <div className="text-center">
+          <Loader2 className="w-10 h-10 text-blue-600 animate-spin mx-auto mb-4" />
+          <p className="text-slate-500 font-medium animate-pulse">Syncing Session...</p>
+        </div>
+      </div>
+    );
+  }
 
   const upcoming = appointments.filter(app => 
     isAfter(new Date(app.appointmentDate), startOfDay(new Date())) || 

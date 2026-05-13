@@ -1,6 +1,8 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+import { useRouter } from 'next/navigation';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { 
   Search, 
@@ -17,6 +19,7 @@ import { useUser } from '@/context/UserContext';
 import { useAppointments } from '@/hooks/useAppointments';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
+import { CreateAppointmentModal } from '@/components/modals/CreateAppointmentModal';
 
 const StatusBadge = ({ status }: { status: string }) => {
   const styles: any = {
@@ -34,8 +37,36 @@ const StatusBadge = ({ status }: { status: string }) => {
 };
 
 export default function AppointmentsPage() {
-  const { user } = useUser();
-  const { appointments, loading } = useAppointments(user?.companyId || null);
+  const { user, loading: authLoading } = useUser();
+  const router = useRouter();
+  const { appointments, loading: appointmentsLoading, setAppointments } = useAppointments(user?.companyId || null);
+  const [loading, setLoading] = useState(true);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  useEffect(() => {
+    if (authLoading) return;
+    
+    if (!user) {
+      router.push('/auth/login');
+      return;
+    }
+
+    if (!user.companyId) {
+      setLoading(false);
+      return;
+    }
+
+    // Since useAppointments handles its own loading, we just bridge it here if needed,
+    // or just use appointmentsLoading directly. 
+    // To fix the "infinite loading", we must ensure we stop showing the spinner.
+    setLoading(appointmentsLoading);
+  }, [user, authLoading, appointmentsLoading]);
+
+  const fetchAppointments = async () => {
+    if (!user?.companyId) return;
+    const res = await axios.get(`/api/appointments?companyId=${user.companyId}`);
+    setAppointments(res.data);
+  };
 
   return (
     <div className="flex min-h-screen bg-slate-50">
@@ -47,10 +78,20 @@ export default function AppointmentsPage() {
             <h2 className="text-2xl font-bold text-slate-900">Appointments</h2>
             <p className="text-slate-500">Manage and schedule scan appointments.</p>
           </div>
-          <button className="btn-primary flex items-center gap-2">
+          <button 
+            onClick={() => setIsModalOpen(true)}
+            className="btn-primary flex items-center gap-2"
+          >
             <Plus className="w-4 h-4" /> New Appointment
           </button>
         </header>
+
+        <CreateAppointmentModal 
+          isOpen={isModalOpen} 
+          onClose={() => setIsModalOpen(false)} 
+          companyId={user?.companyId}
+          onSuccess={fetchAppointments}
+        />
 
         <div className="card-premium overflow-hidden !p-0">
           <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-white">

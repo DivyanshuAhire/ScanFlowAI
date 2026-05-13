@@ -16,11 +16,22 @@ export const UserProvider = ({ children }: { children: React.ReactNode }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const storedUser = localStorage.getItem('scanflow_user');
-    if (storedUser) {
-      setUser(JSON.parse(storedUser));
+    try {
+      const storedUser = localStorage.getItem('scanflow_user');
+      const token = localStorage.getItem('scanflow_token');
+      
+      if (storedUser && token) {
+        setUser(JSON.parse(storedUser));
+      } else {
+        // If no user found, clear any partial data
+        localStorage.removeItem('scanflow_user');
+        localStorage.removeItem('scanflow_token');
+      }
+    } catch (err) {
+      console.error('Failed to restore session:', err);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, []);
 
   const login = (userData: any, token: string) => {
