@@ -13,6 +13,7 @@ import {
 import axios from 'axios';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { format } from 'date-fns';
 
 export const CreateAppointmentModal = ({ isOpen, onClose, companyId, clinicId, onSuccess }: any) => {
   const [loading, setLoading] = useState(false);
@@ -63,10 +64,30 @@ export const CreateAppointmentModal = ({ isOpen, onClose, companyId, clinicId, o
 
   if (!isOpen) return null;
 
-  const handleDateChange = (date: string) => {
-    setFormData({ ...formData, appointmentDate: date });
-    fetchSlots(date);
+  const handleDateChange = (dateStr: string) => {
+    setFormData({ ...formData, appointmentDate: dateStr });
+    fetchSlots(dateStr);
   };
+
+  const getNext7Days = () => {
+    const days = [];
+    let current = new Date();
+    
+    while (days.length < 7) {
+      if (current.getDay() !== 0) { // Skip Sunday
+        days.push({
+          dateStr: current.toISOString().split('T')[0],
+          dayName: format(current, 'EEE'),
+          dayNumber: format(current, 'dd'),
+          month: format(current, 'MMM')
+        });
+      }
+      current.setDate(current.getDate() + 1);
+    }
+    return days;
+  };
+
+  const next7Days = getNext7Days();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -136,21 +157,36 @@ export const CreateAppointmentModal = ({ isOpen, onClose, companyId, clinicId, o
               </div>
             </div>
 
-            <div className="space-y-2 col-span-full">
+            <div className="space-y-3 col-span-full">
               <label className="text-sm font-bold text-slate-700 flex items-center justify-between">
-                Appointment Date
-                <span className="text-[10px] text-slate-400 font-medium">Auto-refreshing availability</span>
+                <div className="flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-slate-400" />
+                  Select Date
+                </div>
+                <span className="text-[10px] text-slate-400 font-medium">Sundays excluded</span>
               </label>
-              <div className="relative">
-                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input 
-                  type="date" 
-                  required
-                  min={new Date().toISOString().split('T')[0]}
-                  value={formData.appointmentDate}
-                  onChange={(e) => handleDateChange(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none font-medium"
-                />
+              
+              <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide -mx-1 px-1">
+                {next7Days.map((day) => (
+                  <button
+                    key={day.dateStr}
+                    type="button"
+                    onClick={() => handleDateChange(day.dateStr)}
+                    className={cn(
+                      "flex flex-col items-center min-w-[70px] p-3 rounded-2xl border transition-all",
+                      formData.appointmentDate === day.dateStr
+                        ? "bg-blue-600 border-blue-600 text-white shadow-lg shadow-blue-100"
+                        : "bg-white border-slate-100 text-slate-600 hover:border-blue-200"
+                    )}
+                  >
+                    <span className={cn(
+                      "text-[10px] font-bold uppercase mb-1",
+                      formData.appointmentDate === day.dateStr ? "text-blue-100" : "text-slate-400"
+                    )}>{day.dayName}</span>
+                    <span className="text-lg font-black leading-none">{day.dayNumber}</span>
+                    <span className="text-[10px] font-bold mt-1">{day.month}</span>
+                  </button>
+                ))}
               </div>
             </div>
           </div>
