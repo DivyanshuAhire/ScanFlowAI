@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
-import { Cluster } from '@/models';
+import { Cluster, Route } from '@/models';
 
 export async function GET(req: Request) {
   try {
@@ -12,9 +12,27 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'Company ID required' }, { status: 400 });
     }
 
-    const clusters = await Cluster.find({ companyId, isDeleted: false }).sort({ name: 1 });
+    const clusters = await Cluster.find({ companyId, isDeleted: false })
+      .populate('routeGroupIds', 'name')
+      .sort({ name: 1 });
+
+    // Auto-repair: If any cluster still has the old singular field, fix it on the fly
+    for (const cluster of clusters) {
+      const raw = cluster.toObject() as any;
+      if (raw.routeGroupId && (!raw.routeGroupIds || raw.routeGroupIds.length === 0)) {
+        await Cluster.updateOne(
+          { _id: cluster._id },
+          { 
+            $set: { routeGroupIds: [raw.routeGroupId] },
+            $unset: { routeGroupId: 1 }
+          }
+        );
+      }
+    }
+
     return NextResponse.json(clusters);
   } catch (error: any) {
+    console.error('Clusters API Error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

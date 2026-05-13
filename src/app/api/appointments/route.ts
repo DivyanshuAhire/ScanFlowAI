@@ -29,38 +29,16 @@ export async function POST(req: Request) {
     await dbConnect();
     const data = await req.json();
     
-    const { Clinic, Employee, AppointmentStatus } = await import('@/models');
+    const { SchedulingEngineService } = await import('@/services/schedulingEngine');
     
     // 1. Create the appointment record
     const appointment = await Appointment.create(data);
     
-    // 2. Fetch Clinic details to get location/cluster context
-    const clinic = await Clinic.findById(data.clinicId);
-    
-    if (clinic) {
-      // 3. Find an available employee
-      // Logic: Pick an ACTIVE employee who doesn't have an appointment at this time
-      const availableEmployee = await Employee.findOne({
-        companyId: data.companyId,
-        status: 'ACTIVE',
-        isDeleted: false
-      });
-
-      if (availableEmployee) {
-        // Check for conflicts
-        const conflict = await Appointment.findOne({
-          employeeId: availableEmployee._id,
-          appointmentDate: data.appointmentDate,
-          timeSlot: data.timeSlot,
-          status: { $ne: AppointmentStatus.CANCELLED }
-        });
-
-        if (!conflict) {
-          appointment.employeeId = availableEmployee._id;
-          appointment.status = AppointmentStatus.ASSIGNED;
-          await appointment.save();
-        }
-      }
+    // 2. Trigger Auto-Assignment Engine
+    try {
+      await SchedulingEngineService.autoAssignEmployee(appointment._id as string);
+    } catch (assignError) {
+      console.error('Auto-assignment failed:', assignError);
     }
     
     return NextResponse.json(appointment, { status: 201 });

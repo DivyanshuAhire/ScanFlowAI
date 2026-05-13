@@ -15,20 +15,28 @@ import { useRouter } from 'next/navigation';
 import axios from 'axios';
 import { cn } from '@/lib/utils';
 import { CreateRouteModal } from '@/components/modals/CreateRouteModal';
+import { EditRouteModal } from '@/components/modals/EditRouteModal';
 
 export default function RoutesPage() {
   const { user, loading: authLoading } = useUser();
   const router = useRouter();
   const [routes, setRoutes] = useState<any[]>([]);
+  const [clusters, setClusters] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [selectedRoute, setSelectedRoute] = useState<any>(null);
 
   const fetchRoutes = async () => {
     if (!user?.companyId) return;
     try {
       setLoading(true);
-      const res = await axios.get(`/api/routes?companyId=${user.companyId}`);
-      setRoutes(res.data);
+      const [routeRes, clusterRes] = await Promise.all([
+        axios.get(`/api/routes?companyId=${user.companyId}`),
+        axios.get(`/api/clusters?companyId=${user.companyId}`)
+      ]);
+      setRoutes(routeRes.data);
+      setClusters(clusterRes.data);
     } catch (err) {
       console.error(err);
     } finally {
@@ -117,10 +125,16 @@ export default function RoutesPage() {
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex gap-1.5 flex-wrap">
-                        {/* Mocking cluster tags for visual */}
-                        {['Cluster A', 'Cluster B'].map(c => (
-                          <span key={c} className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded text-[10px] font-bold">{c}</span>
-                        ))}
+                        {clusters
+                          .filter(c => (c.routeGroupIds || []).some((rg: any) => (rg._id || rg) === route._id))
+                          .map(c => (
+                            <span key={c._id} className="px-2 py-0.5 bg-blue-50 text-blue-600 rounded text-[10px] font-bold border border-blue-100">
+                              {c.name}
+                            </span>
+                          ))}
+                        {clusters.filter(c => (c.routeGroupIds || []).some((rg: any) => (rg._id || rg) === route._id)).length === 0 && (
+                          <span className="text-[10px] text-slate-400 font-medium italic">No clusters assigned</span>
+                        )}
                       </div>
                     </td>
                     <td className="px-6 py-4">
@@ -132,8 +146,14 @@ export default function RoutesPage() {
                     <td className="px-6 py-4">
                       <span className="text-sm text-slate-600 font-medium">3 Employees</span>
                     </td>
-                    <td className="px-6 py-4 text-right">
-                      <button className="p-2 text-slate-400 hover:text-slate-600 rounded-lg">
+                     <td className="px-6 py-4 text-right">
+                      <button 
+                        onClick={() => {
+                          setSelectedRoute(route);
+                          setIsEditModalOpen(true);
+                        }}
+                        className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                      >
                         <MoreVertical className="w-5 h-5" />
                       </button>
                     </td>
@@ -143,6 +163,13 @@ export default function RoutesPage() {
             </tbody>
           </table>
         </div>
+        <EditRouteModal 
+          isOpen={isEditModalOpen}
+          onClose={() => setIsEditModalOpen(false)}
+          companyId={user?.companyId}
+          route={selectedRoute}
+          onSuccess={fetchRoutes}
+        />
       </main>
     </div>
   );

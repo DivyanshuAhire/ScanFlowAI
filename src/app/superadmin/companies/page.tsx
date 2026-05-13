@@ -17,6 +17,7 @@ import { useUser } from '@/context/UserContext';
 import { useRouter } from 'next/navigation';
 import axios from 'axios';
 import { CreateCompanyModal } from '@/components/modals/CreateCompanyModal';
+import { ManageCompanyModal } from '@/components/modals/ManageCompanyModal';
 
 export default function SuperAdminCompanies() {
   const { user, loading: authLoading } = useUser();
@@ -24,6 +25,8 @@ export default function SuperAdminCompanies() {
   const [companies, setCompanies] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isManageModalOpen, setIsManageModalOpen] = useState(false);
+  const [selectedCompany, setSelectedCompany] = useState<any>(null);
 
   const fetchCompanies = async () => {
     try {
@@ -116,7 +119,13 @@ export default function SuperAdminCompanies() {
                     <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
                     <span className="text-xs font-black text-emerald-600 uppercase">Account Active</span>
                   </div>
-                  <button className="flex items-center gap-1 text-blue-600 font-bold text-sm hover:gap-2 transition-all">
+                  <button 
+                    onClick={() => {
+                      setSelectedCompany(company);
+                      setIsManageModalOpen(true);
+                    }}
+                    className="flex items-center gap-1 text-blue-600 font-bold text-sm hover:gap-2 transition-all"
+                  >
                     Manage Tenant <ChevronRight className="w-4 h-4" />
                   </button>
                 </div>
@@ -129,6 +138,11 @@ export default function SuperAdminCompanies() {
           isOpen={isModalOpen}
           onClose={() => setIsModalOpen(false)}
           onSuccess={fetchCompanies}
+        />
+        <ManageCompanyModal 
+          isOpen={isManageModalOpen}
+          onClose={() => setIsManageModalOpen(false)}
+          company={selectedCompany}
         />
       </main>
     </div>

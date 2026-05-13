@@ -51,7 +51,7 @@ export class SchedulingEngineService {
     if (!appointment) throw new Error('Appointment not found');
 
     const { companyId, clinicId, appointmentDate, timeSlot, duration } = appointment;
-    const clinic = await Clinic.findById(clinicId);
+    const clinic = await Clinic.findById(clinicId).populate('clusterId');
     if (!clinic) throw new Error('Clinic not found');
 
     const employees = await Employee.find({ companyId, status: 'ACTIVE', isDeleted: false });
@@ -66,13 +66,14 @@ export class SchedulingEngineService {
 
       let score = 0;
 
-      // STEP 2: Route Matching
+      // STEP 2: Route Matching (Direct)
       if (employee.assignedRouteId?.toString() === clinic.routeId?.toString()) {
         score -= 100; // High priority for same route
       }
 
-      // STEP 3: Same Cluster Optimization
-      if (employee.assignedRouteId?.toString() === clinic.clusterId?.toString()) {
+      // STEP 3: Same Cluster Optimization (via Route Group)
+      const cluster = clinic.clusterId as any;
+      if (cluster && (cluster.routeGroupIds || []).some((rg: any) => rg.toString() === employee.assignedRouteId?.toString())) {
         score -= 50;
       }
 
@@ -91,8 +92,9 @@ export class SchedulingEngineService {
         
         score += feasibility.travelTime; // Lower travel time is better
       } else {
-        // STEP 5: Free employee fallback
-        score += 200; 
+        // STEP 5: Free employee fallback - prioritize free employees slightly 
+        // to distribute load if no route match found
+        score += 50; 
       }
 
       if (score < minScore) {
@@ -146,12 +148,15 @@ export class SchedulingEngineService {
       if (appStart > newStart && !after) after = app;
     }
 
-    // Logic for travel buffer calculation between clusters
-    // Using Step 4 formula: Distance * 3 mins
+    // In a real app, query ClusterDistanceMatrix
+    // For now, calculate a rough travel time if clusters are different
+    let travelTime = 15; // default 15 mins
     
-    // For simplicity in this MVP, we assume it's possible if there's at least 30 mins buffer 
-    // unless clusters are different. In a full implementation, we query ClusterDistanceMatrix.
-    
-    return { possible: true, travelTime: 30 };
+    if (before && before.clinicId?.toString() !== newApp.clinicId?.toString()) {
+      // If coming from a different clinic, add 15 mins travel
+      travelTime = 30;
+    }
+
+    return { possible: true, travelTime };
   }
 }

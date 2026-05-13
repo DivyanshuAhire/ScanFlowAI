@@ -3,7 +3,7 @@ import mongoose, { Schema, Document, Model } from 'mongoose';
 export interface ICluster extends Document {
   name: string;
   companyId: mongoose.Types.ObjectId;
-  routeGroupId?: mongoose.Types.ObjectId;
+  routeGroupIds: mongoose.Types.ObjectId[];
   distanceFromHQ: number; // in KM
   estimatedTravelTimeFromHQ: number; // in minutes
   location?: {
@@ -19,7 +19,7 @@ const ClusterSchema: Schema = new Schema(
   {
     name: { type: String, required: true },
     companyId: { type: Schema.Types.ObjectId, ref: 'Company', required: true, index: true },
-    routeGroupId: { type: Schema.Types.ObjectId, ref: 'Route' },
+    routeGroupIds: [{ type: Schema.Types.ObjectId, ref: 'Route' }],
     distanceFromHQ: { type: Number, default: 0 },
     estimatedTravelTimeFromHQ: { type: Number, default: 0 },
     location: {
@@ -31,6 +31,11 @@ const ClusterSchema: Schema = new Schema(
   { timestamps: true }
 );
 
-const Cluster: Model<ICluster> = mongoose.models.Cluster || mongoose.model<ICluster>('Cluster', ClusterSchema);
+// Handle model compilation error in Next.js hot-reloading
+if (mongoose.models.Cluster) {
+  delete mongoose.models.Cluster;
+}
+
+const Cluster: Model<ICluster> = mongoose.model<ICluster>('Cluster', ClusterSchema);
 
 export default Cluster;
