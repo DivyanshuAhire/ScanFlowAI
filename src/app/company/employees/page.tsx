@@ -18,6 +18,7 @@ import { useRouter } from 'next/navigation';
 import axios from 'axios';
 import { cn } from '@/lib/utils';
 import { CreateEmployeeModal } from '@/components/modals/CreateEmployeeModal';
+import { EditEmployeeModal } from '@/components/modals/EditEmployeeModal';
 
 export default function EmployeesPage() {
   const { user, loading: authLoading } = useUser();
@@ -25,6 +26,8 @@ export default function EmployeesPage() {
   const [employees, setEmployees] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [selectedEmployee, setSelectedEmployee] = useState<any>(null);
 
   const fetchEmployees = async () => {
     if (!user?.companyId) return;
@@ -112,7 +115,13 @@ export default function EmployeesPage() {
                       emp.status === 'ACTIVE' ? 'bg-emerald-500' : 'bg-amber-500'
                     )}></span>
                   </div>
-                  <button className="p-1.5 text-slate-300 hover:text-slate-600 transition-colors">
+                  <button 
+                    onClick={() => {
+                      setSelectedEmployee(emp);
+                      setIsEditModalOpen(true);
+                    }}
+                    className="p-1.5 text-slate-300 hover:text-slate-600 transition-colors"
+                  >
                     <MoreVertical className="w-5 h-5" />
                   </button>
                 </div>
@@ -147,6 +156,13 @@ export default function EmployeesPage() {
             ))
           )}
         </div>
+        <EditEmployeeModal 
+          isOpen={isEditModalOpen}
+          onClose={() => setIsEditModalOpen(false)}
+          companyId={user?.companyId}
+          employee={selectedEmployee}
+          onSuccess={fetchEmployees}
+        />
       </main>
     </div>
   );

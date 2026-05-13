@@ -23,7 +23,7 @@ export interface IEmployee extends Document {
 const EmployeeSchema: Schema = new Schema(
   {
     name: { type: String, required: true },
-    email: { type: String, unique: true, sparse: true, required: false, default: undefined },
+    email: { type: String, required: false },
     phoneNumber: { type: String, required: true, unique: true, index: true },
     companyId: { type: Schema.Types.ObjectId, ref: 'Company', required: true, index: true },
     assignedRouteId: { type: Schema.Types.ObjectId, ref: 'Route' },

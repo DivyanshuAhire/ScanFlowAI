@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import { Employee } from '@/models';
+import mongoose from 'mongoose';
 
 export async function GET(req: Request) {
   try {
@@ -15,6 +16,28 @@ export async function GET(req: Request) {
     const employees = await Employee.find({ companyId, isDeleted: false })
       .populate('assignedRouteId', 'name')
       .sort({ name: 1 });
+
+    // Clean up legacy unique email indexes if they exist
+    try {
+      const db = mongoose.connection.db;
+      if (db) {
+        // Fix for Employees collection
+        const empIndexes = await db.collection('employees').indexes();
+        if (empIndexes.some(idx => idx.name === 'email_1')) {
+          await db.collection('employees').dropIndex('email_1');
+          console.log('Dropped legacy employees email index');
+        }
+
+        // Fix for Users collection
+        const userIndexes = await db.collection('users').indexes();
+        if (userIndexes.some(idx => idx.name === 'email_1')) {
+          await db.collection('users').dropIndex('email_1');
+          console.log('Dropped legacy users email index');
+        }
+      }
+    } catch (e) {
+      console.error('Index cleanup error:', e);
+    }
 
     return NextResponse.json(employees);
   } catch (error: any) {
