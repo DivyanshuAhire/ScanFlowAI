@@ -26,7 +26,25 @@ export async function POST(req: Request) {
   try {
     await dbConnect();
     const data = await req.json();
+
+    // 1. Create Clinic
     const clinic = await Clinic.create(data);
+
+    // 2. Create Clinic User Account
+    const { User, UserRole } = await import('@/models');
+    const bcrypt = await import('bcryptjs');
+    
+    const hashedPassword = await bcrypt.hash('admin123', 10); // Default password
+    await User.create({
+      name: `${clinic.name} Admin`,
+      email: clinic.email,
+      password: hashedPassword,
+      role: UserRole.CLINIC_USER,
+      companyId: clinic.companyId,
+      clinicId: clinic._id,
+      isVerified: true
+    });
+
     return NextResponse.json(clinic, { status: 201 });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });

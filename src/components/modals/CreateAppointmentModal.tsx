@@ -14,21 +14,29 @@ import axios from 'axios';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
-export const CreateAppointmentModal = ({ isOpen, onClose, companyId, onSuccess }: any) => {
+export const CreateAppointmentModal = ({ isOpen, onClose, companyId, clinicId, onSuccess }: any) => {
   const [loading, setLoading] = useState(false);
   const [clinics, setClinics] = useState<any[]>([]);
+  const [scanTypes, setScanTypes] = useState<string[]>([]);
   const [formData, setFormData] = useState({
-    clinicId: '',
+    clinicId: clinicId || '',
     appointmentDate: new Date().toISOString().split('T')[0],
     timeSlot: '09:00',
-    scanType: 'MRI Scan',
-    urgency: 'MEDIUM',
+    scanType: '',
     notes: ''
   });
 
   useEffect(() => {
     if (isOpen && companyId) {
+      // Fetch Clinics
       axios.get(`/api/clinics?companyId=${companyId}`).then(res => setClinics(res.data));
+      // Fetch Scan Types
+      axios.get(`/api/company/config?companyId=${companyId}`).then(res => {
+        setScanTypes(res.data.scanTypes);
+        if (res.data.scanTypes.length > 0) {
+          setFormData(prev => ({ ...prev, scanType: res.data.scanTypes[0] }));
+        }
+      });
     }
   }, [isOpen, companyId]);
 
@@ -65,32 +73,37 @@ export const CreateAppointmentModal = ({ isOpen, onClose, companyId, onSuccess }
 
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-2">
-              <label className="text-sm font-bold text-slate-700">Select Clinic</label>
-              <div className="relative">
-                <Hospital className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <select 
-                  required
-                  value={formData.clinicId}
-                  onChange={(e) => setFormData({ ...formData, clinicId: e.target.value })}
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none appearance-none font-medium"
-                >
-                  <option value="">Choose a clinic</option>
-                  {clinics.map(c => <option key={c._id} value={c._id}>{c.name} ({c.location.area})</option>)}
-                </select>
+            {!clinicId && (
+              <div className="space-y-2">
+                <label className="text-sm font-bold text-slate-700">Select Clinic</label>
+                <div className="relative">
+                  <Hospital className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <select 
+                    required
+                    value={formData.clinicId}
+                    onChange={(e) => setFormData({ ...formData, clinicId: e.target.value })}
+                    className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none appearance-none font-medium"
+                  >
+                    <option value="">Choose a clinic</option>
+                    {clinics.map(c => <option key={c._id} value={c._id}>{c.name} ({c.location.area})</option>)}
+                  </select>
+                </div>
               </div>
-            </div>
+            )}
 
             <div className="space-y-2">
               <label className="text-sm font-bold text-slate-700">Scan Type</label>
               <div className="relative">
                 <Activity className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input 
-                  type="text" 
+                <select 
+                  required
                   value={formData.scanType}
                   onChange={(e) => setFormData({ ...formData, scanType: e.target.value })}
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none font-medium"
-                />
+                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none appearance-none font-medium"
+                >
+                  <option value="">Select scan type</option>
+                  {scanTypes.map(type => <option key={type} value={type}>{type}</option>)}
+                </select>
               </div>
             </div>
 
@@ -123,26 +136,6 @@ export const CreateAppointmentModal = ({ isOpen, onClose, companyId, onSuccess }
             </div>
           </div>
 
-          <div className="space-y-2">
-            <label className="text-sm font-bold text-slate-700">Urgency Level</label>
-            <div className="flex gap-4">
-              {['LOW', 'MEDIUM', 'HIGH'].map(u => (
-                <button
-                  key={u}
-                  type="button"
-                  onClick={() => setFormData({ ...formData, urgency: u })}
-                  className={cn(
-                    "flex-1 py-2 rounded-xl text-xs font-bold border transition-all",
-                    formData.urgency === u 
-                      ? "bg-slate-900 text-white border-slate-900" 
-                      : "bg-white text-slate-600 border-slate-200 hover:border-slate-400"
-                  )}
-                >
-                  {u}
-                </button>
-              ))}
-            </div>
-          </div>
 
           <div className="p-4 bg-blue-50 rounded-2xl flex gap-3 items-start border border-blue-100">
             <AlertCircle className="w-5 h-5 text-blue-600 shrink-0" />

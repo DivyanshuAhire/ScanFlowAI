@@ -16,6 +16,7 @@ import { useUser } from '@/context/UserContext';
 import { useClinicAppointments } from '@/hooks/useClinicAppointments';
 import { cn } from '@/lib/utils';
 import { format, isAfter, isBefore, startOfDay } from 'date-fns';
+import { CreateAppointmentModal } from '@/components/modals/CreateAppointmentModal';
 
 const AppointmentCard = ({ app }: any) => (
   <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
@@ -46,8 +47,9 @@ const AppointmentCard = ({ app }: any) => (
 export default function ClinicDashboard() {
   const { user, loading: authLoading } = useUser();
   const router = useRouter();
-  const { appointments, loading: appointmentsLoading } = useClinicAppointments(user?.clinicId || null);
+  const { appointments, loading: appointmentsLoading, fetchAppointments } = useClinicAppointments(user?.clinicId || null);
   const [loading, setLoading] = useState(true);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   useEffect(() => {
     if (authLoading) return;
@@ -111,10 +113,13 @@ export default function ClinicDashboard() {
       <main className="max-w-5xl mx-auto p-6 lg:p-10">
         <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10">
           <div>
-            <h2 className="text-3xl font-black text-slate-900">Welcome, City Diagnostics</h2>
+            <h2 className="text-3xl font-black text-slate-900">Welcome, {user?.name || 'Clinic Admin'}</h2>
             <p className="text-slate-500 mt-1">Request and track your diagnostic scan appointments.</p>
           </div>
-          <button className="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-blue-700 transition-all shadow-lg shadow-blue-200 active:scale-95">
+          <button 
+            onClick={() => setIsModalOpen(true)}
+            className="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-blue-700 transition-all shadow-lg shadow-blue-200 active:scale-95"
+          >
             <PlusCircle className="w-5 h-5" /> Request New Scan
           </button>
         </header>
@@ -216,6 +221,14 @@ export default function ClinicDashboard() {
           </aside>
         </div>
       </main>
+
+      <CreateAppointmentModal 
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        companyId={user?.companyId}
+        clinicId={user?.clinicId}
+        onSuccess={fetchAppointments}
+      />
     </div>
   );
 }

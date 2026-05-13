@@ -12,6 +12,7 @@ export interface ICompany extends Document {
     lat: number;
     lng: number;
   };
+  scanTypes: string[];
   isDeleted: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -30,6 +31,7 @@ const CompanySchema: Schema = new Schema(
       lat: { type: Number },
       lng: { type: Number },
     },
+    scanTypes: { type: [String], default: ['MRI Scan', 'CT Scan', 'X-Ray', 'Ultrasound'] },
     isDeleted: { type: Boolean, default: false },
   },
   { timestamps: true }

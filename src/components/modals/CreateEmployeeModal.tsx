@@ -16,21 +16,14 @@ import { toast } from 'sonner';
 
 export const CreateEmployeeModal = ({ isOpen, onClose, companyId, onSuccess }: any) => {
   const [loading, setLoading] = useState(false);
-  const [routes, setRoutes] = useState<any[]>([]);
   const [formData, setFormData] = useState({
     name: '',
     email: '',
     password: '',
     phoneNumber: '',
-    assignedRouteId: '',
     workTimings: { start: '09:00', end: '18:00' }
   });
 
-  useEffect(() => {
-    if (isOpen && companyId) {
-      axios.get(`/api/routes?companyId=${companyId}`).then(res => setRoutes(res.data));
-    }
-  }, [isOpen, companyId]);
 
   if (!isOpen) return null;
 
@@ -134,22 +127,6 @@ export const CreateEmployeeModal = ({ isOpen, onClose, companyId, onSuccess }: a
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-bold text-slate-700">Assigned Route</label>
-              <div className="relative">
-                <Navigation className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <select 
-                  required
-                  value={formData.assignedRouteId}
-                  onChange={(e) => setFormData({ ...formData, assignedRouteId: e.target.value })}
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none appearance-none font-medium"
-                >
-                  <option value="">Select Route</option>
-                  {routes.map(r => <option key={r._id} value={r._id}>{r.name}</option>)}
-                </select>
-              </div>
-            </div>
-
-            <div className="space-y-2">
               <label className="text-sm font-bold text-slate-700">Start Time</label>
               <div className="relative">
                 <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -162,6 +139,27 @@ export const CreateEmployeeModal = ({ isOpen, onClose, companyId, onSuccess }: a
                 />
               </div>
             </div>
+            
+            <div className="space-y-2">
+              <label className="text-sm font-bold text-slate-700">End Time</label>
+              <div className="relative">
+                <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input 
+                  type="time" 
+                  required
+                  value={formData.workTimings.end}
+                  onChange={(e) => setFormData({ ...formData, workTimings: { ...formData.workTimings, end: e.target.value } })}
+                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none font-medium"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="p-4 bg-blue-50 rounded-2xl flex gap-3 items-start border border-blue-100 mt-4">
+            <Navigation className="w-5 h-5 text-blue-600 mt-0.5 shrink-0" />
+            <p className="text-xs text-blue-800 font-medium leading-relaxed">
+              <strong>Smart Routing Enabled:</strong> Optimal routes will be automatically assigned to this technician by the ScanFlow AI engine based on appointment density and geospatial clusters.
+            </p>
           </div>
 
           <div className="flex gap-3 pt-4 border-t border-slate-100">

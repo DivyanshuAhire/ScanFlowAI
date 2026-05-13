@@ -39,6 +39,17 @@ export default function SuperAdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
+  const fetchStats = async () => {
+    try {
+      const res = await axios.get('/api/superadmin/stats');
+      setStats(res.data);
+    } catch (err) {
+      console.error('Stats fetch error:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (authLoading) return;
 
@@ -46,17 +57,6 @@ export default function SuperAdminDashboard() {
       router.push('/auth/login');
       return;
     }
-
-    const fetchStats = async () => {
-      try {
-        const res = await axios.get('/api/superadmin/stats');
-        setStats(res.data);
-      } catch (err) {
-        console.error('Stats fetch error:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
 
     fetchStats();
   }, [user, authLoading, router]);
