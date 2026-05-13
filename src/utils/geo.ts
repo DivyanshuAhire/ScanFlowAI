@@ -1,0 +1,25 @@
+/**
+ * Calculates distance between two points using Haversine formula (optional if we use matrix)
+ * But the user specified: Estimated Travel Time = Distance Between Clusters × 3 minutes
+ * And 10 KM = 30 minutes
+ */
+
+export const calculateTravelTime = (distanceKm: number) => {
+  return distanceKm * 3;
+};
+
+export const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+  const R = 6371; // Radius of the earth in km
+  const dLat = deg2rad(lat2 - lat1);
+  const dLon = deg2rad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  const d = R * c; // Distance in km
+  return d;
+};
+
+function deg2rad(deg: number) {
+  return deg * (Math.PI / 180);
+}
