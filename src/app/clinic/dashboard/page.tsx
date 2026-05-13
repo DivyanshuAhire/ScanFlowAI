@@ -12,6 +12,7 @@ import {
   Loader2
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useUser } from '@/context/UserContext';
 import { useClinicAppointments } from '@/hooks/useClinicAppointments';
 import { cn } from '@/lib/utils';
@@ -94,9 +95,9 @@ export default function ClinicDashboard() {
         <div className="flex items-center gap-8">
           <h1 className="text-xl font-bold text-blue-600">ScanFlow <span className="text-slate-400 font-medium">| Clinic Portal</span></h1>
           <div className="hidden md:flex items-center gap-6">
-            <a href="#" className="text-sm font-bold text-blue-600">Dashboard</a>
-            <a href="#" className="text-sm font-medium text-slate-500 hover:text-slate-900">Appointments</a>
-            <a href="#" className="text-sm font-medium text-slate-500 hover:text-slate-900">History</a>
+            <Link href="/clinic/dashboard" className="text-sm font-bold text-blue-600">Dashboard</Link>
+            <Link href="/clinic/appointments" className="text-sm font-medium text-slate-500 hover:text-slate-900">Appointments</Link>
+            <Link href="/clinic/history" className="text-sm font-medium text-slate-500 hover:text-slate-900">History</Link>
           </div>
         </div>
         <div className="flex items-center gap-4">
@@ -131,7 +132,7 @@ export default function ClinicDashboard() {
                 <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
                   <Calendar className="w-5 h-5 text-blue-600" /> Upcoming Appointments
                 </h3>
-                <a href="#" className="text-sm font-bold text-blue-600 hover:underline">View All</a>
+                <Link href="/clinic/appointments" className="text-sm font-bold text-blue-600 hover:underline">View All</Link>
               </div>
               
               {loading ? (
@@ -201,22 +202,19 @@ export default function ClinicDashboard() {
             <div className="bg-gradient-to-br from-blue-600 to-indigo-700 p-6 rounded-2xl text-white shadow-xl">
               <h4 className="font-bold text-xl mb-2">Need Help?</h4>
               <p className="text-blue-100 text-sm mb-6">Contact your assigned company administrator via WhatsApp for urgent queries.</p>
-              <button className="w-full py-3 bg-white text-blue-600 rounded-xl font-bold hover:bg-blue-50 transition-colors">
+              <button 
+                onClick={() => window.open('https://wa.me/910000000000', '_blank')}
+                className="w-full py-3 bg-white text-blue-600 rounded-xl font-bold hover:bg-blue-50 transition-colors"
+              >
                 Contact Admin
               </button>
             </div>
 
             <div className="bg-white p-6 rounded-2xl border border-slate-200">
               <h4 className="font-bold text-slate-900 mb-4 flex items-center gap-2">
-                <Clock className="w-4 h-4 text-blue-600" /> Available Slots Today
+                <Clock className="w-4 h-4 text-blue-600" /> Availability
               </h4>
-              <div className="grid grid-cols-2 gap-3">
-                {['09:00', '10:30', '14:00', '15:30', '16:00', '17:30'].map(slot => (
-                  <button key={slot} className="py-2 border border-slate-100 bg-slate-50 rounded-lg text-sm font-medium hover:border-blue-300 hover:bg-blue-50 transition-all">
-                    {slot} AM
-                  </button>
-                ))}
-              </div>
+              <p className="text-sm text-slate-400 italic">Technician availability is calculated in real-time based on current route optimization.</p>
             </div>
           </aside>
         </div>

@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { 
   Users, 
   CalendarCheck, 
@@ -14,6 +15,7 @@ import {
 import { useUser } from '@/context/UserContext';
 import { useCompanyStats } from '@/hooks/useCompanyStats';
 import { cn } from '@/lib/utils';
+import { CreateAppointmentModal } from '@/components/modals/CreateAppointmentModal';
 
 const StatCard = ({ title, value, icon: Icon, color, trend, loading }: any) => (
   <div className="card-premium">
@@ -43,6 +45,7 @@ export default function CompanyDashboard() {
   const router = useRouter();
   const { stats, loading: statsLoading } = useCompanyStats(user?.companyId || null);
   const [loading, setLoading] = useState(true);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   useEffect(() => {
     if (authLoading) return;
@@ -85,11 +88,21 @@ export default function CompanyDashboard() {
             <button className="px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium hover:bg-slate-50 transition-colors">
               Export Report
             </button>
-            <button className="btn-primary">
+            <button 
+              onClick={() => setIsModalOpen(true)}
+              className="btn-primary"
+            >
               Create Appointment
             </button>
           </div>
         </header>
+
+        <CreateAppointmentModal 
+          isOpen={isModalOpen}
+          onClose={() => setIsModalOpen(false)}
+          companyId={user?.companyId}
+          onSuccess={() => window.location.reload()}
+        />
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           <StatCard 
@@ -97,7 +110,6 @@ export default function CompanyDashboard() {
             value={stats?.totalAppointments || '0'} 
             icon={CalendarCheck} 
             color="bg-blue-600" 
-            trend="+12% from last month"
             loading={loading}
           />
           <StatCard 
@@ -112,7 +124,6 @@ export default function CompanyDashboard() {
             value={`${stats?.routeEfficiency || '0'}%`} 
             icon={Activity} 
             color="bg-emerald-600" 
-            trend="+2.4% improved"
             loading={loading}
           />
           <StatCard 
@@ -135,32 +146,15 @@ export default function CompanyDashboard() {
             </div>
             {/* Chart Placeholder */}
             <div className="w-full h-64 bg-slate-50 rounded-lg flex items-center justify-center border border-dashed border-slate-300">
-              <p className="text-slate-400 text-sm">Analytics Graph Component Here</p>
+              <p className="text-slate-400 text-sm italic">Analytics visualization will appear as data matures.</p>
             </div>
           </div>
 
           <div className="card-premium">
             <h3 className="font-bold text-slate-900 text-lg mb-6">Cluster Load Balancing</h3>
-            <div className="space-y-6">
-              {[
-                { name: 'Andheri East', load: 85, color: 'bg-blue-600' },
-                { name: 'Powai', load: 62, color: 'bg-indigo-600' },
-                { name: 'Bandra West', load: 45, color: 'bg-emerald-600' },
-                { name: 'Malad West', load: 92, color: 'bg-red-500' },
-              ].map(cluster => (
-                <div key={cluster.name}>
-                  <div className="flex justify-between text-sm mb-2">
-                    <span className="font-medium text-slate-700">{cluster.name}</span>
-                    <span className="text-slate-500">{cluster.load}%</span>
-                  </div>
-                  <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
-                    <div 
-                      className={cn("h-full rounded-full transition-all duration-1000", cluster.color)} 
-                      style={{ width: `${cluster.load}%` }}
-                    />
-                  </div>
-                </div>
-              ))}
+            <div className="flex flex-col items-center justify-center h-64 text-center">
+              <Activity className="w-10 h-10 text-slate-200 mb-3" />
+              <p className="text-slate-400 text-sm italic px-4">Cluster load data will be calculated automatically based on geographic density.</p>
             </div>
           </div>
         </div>

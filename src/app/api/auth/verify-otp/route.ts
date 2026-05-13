@@ -6,9 +6,12 @@ import { signToken } from '@/lib/jwt';
 export async function POST(req: Request) {
   try {
     await dbConnect();
-    const { email, otp } = await req.json();
+    const { identifier, otp } = await req.json();
 
-    const user = await User.findOne({ email, isDeleted: false });
+    const user = await User.findOne({ 
+      $or: [{ email: identifier }, { phoneNumber: identifier }], 
+      isDeleted: false 
+    });
     if (!user) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
@@ -35,7 +38,7 @@ export async function POST(req: Request) {
       user: { 
         id: user._id, 
         name: user.name, 
-        email: user.email, 
+        email: user.email || user.phoneNumber, 
         role: user.role,
         companyId: user.companyId,
         clinicId: user.clinicId,

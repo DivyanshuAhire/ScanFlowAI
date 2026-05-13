@@ -58,7 +58,7 @@ export default function EmployeeDashboard() {
         <div className="bg-gradient-to-br from-indigo-600 to-blue-700 p-6 rounded-3xl relative overflow-hidden">
           <div className="relative z-10">
             <p className="text-blue-100 text-xs font-bold uppercase tracking-wider mb-2">Assigned Route</p>
-            <h3 className="text-xl font-bold mb-4">Western Suburbs - Active</h3>
+            <h3 className="text-xl font-bold mb-4">Assigned Operations Route</h3>
             <div className="flex items-center gap-4">
               <button className="flex-1 bg-white text-blue-600 py-3 rounded-xl font-bold flex items-center justify-center gap-2 text-sm shadow-xl">
                 <Navigation className="w-4 h-4" /> Start Route

@@ -16,6 +16,7 @@ import {
 import { useUser } from '@/context/UserContext';
 import axios from 'axios';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 import { CreateCompanyModal } from '@/components/modals/CreateCompanyModal';
 
 const StatCard = ({ title, value, icon: Icon, color }: any) => (
@@ -84,6 +85,12 @@ export default function SuperAdminDashboard() {
           </div>
           <div className="flex gap-4">
             <button 
+              onClick={() => toast.info('System report generation started...')}
+              className="flex items-center gap-2 px-5 py-2.5 bg-white border border-slate-200 text-slate-600 rounded-xl font-bold text-sm hover:bg-slate-50 transition-all"
+            >
+              Export Global Report
+            </button>
+            <button 
               onClick={() => setIsModalOpen(true)}
               className="flex items-center gap-2 px-5 py-2.5 bg-slate-900 text-white rounded-xl font-bold text-sm hover:bg-slate-800 transition-all shadow-lg shadow-slate-200"
             >
@@ -119,9 +126,9 @@ export default function SuperAdminDashboard() {
           />
           <StatCard 
             title="System Health" 
-            value="99.9%" 
+            value="Operational" 
             icon={ShieldAlert} 
-            color="bg-amber-600" 
+            color="bg-emerald-600" 
           />
         </div>
 
@@ -129,7 +136,10 @@ export default function SuperAdminDashboard() {
           <div className="lg:col-span-2 card-premium">
             <div className="flex items-center justify-between mb-8">
               <h3 className="text-xl font-bold text-slate-900">Recent Partner Onboarding</h3>
-              <button className="text-blue-600 font-bold text-sm flex items-center gap-1 hover:gap-2 transition-all">
+              <button 
+                onClick={() => router.push('/superadmin/companies')}
+                className="text-blue-600 font-bold text-sm flex items-center gap-1 hover:gap-2 transition-all"
+              >
                 View All Partners <ArrowRight className="w-4 h-4" />
               </button>
             </div>
@@ -183,23 +193,14 @@ export default function SuperAdminDashboard() {
 
           <div className="card-premium h-fit">
             <h3 className="text-xl font-bold text-slate-900 mb-8">System Activity</h3>
-            <div className="space-y-6">
-              {[
-                { type: 'Alert', msg: 'High load in North Zone', time: '2m ago' },
-                { type: 'Update', msg: 'New company registered', time: '15m ago' },
-                { type: 'Backup', msg: 'Cloud snapshot completed', time: '1h ago' },
-                { type: 'Success', msg: 'Cluster assignment synced', time: '3h ago' },
-              ].map((log, i) => (
-                <div key={i} className="flex gap-4">
-                  <div className="w-2 h-2 mt-2 bg-blue-500 rounded-full shadow-[0_0_8px_rgba(59,130,246,0.6)]"></div>
-                  <div>
-                    <p className="text-sm font-bold text-slate-800">{log.msg}</p>
-                    <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">{log.time} • {log.type}</p>
-                  </div>
-                </div>
-              ))}
+            <div className="flex flex-col items-center justify-center h-64 text-center">
+              <Activity className="w-10 h-10 text-slate-100 mb-3" />
+              <p className="text-slate-400 text-sm italic">System logs and audit trails will appear here as infrastructure scaling events occur.</p>
             </div>
-            <button className="w-full mt-8 py-3 bg-slate-50 text-slate-600 rounded-xl font-bold text-sm hover:bg-slate-100 transition-all border border-slate-200">
+            <button 
+              onClick={() => router.push('/superadmin/logs')}
+              className="w-full mt-8 py-3 bg-slate-50 text-slate-600 rounded-xl font-bold text-sm hover:bg-slate-100 transition-all border border-slate-200"
+            >
               View All Logs
             </button>
           </div>

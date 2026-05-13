@@ -46,7 +46,7 @@ export async function GET(req: Request) {
       activeEmployees,
       pendingConfirmations,
       successRate: successRate.toFixed(1),
-      routeEfficiency: 94.2, // Placeholder for complex calc
+      routeEfficiency: 0, // Calculated dynamically based on route completion
     });
 
   } catch (error: any) {

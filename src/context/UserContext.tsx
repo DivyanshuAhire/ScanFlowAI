@@ -19,7 +19,7 @@ export const UserProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       const storedUser = localStorage.getItem('scanflow_user');
       const token = localStorage.getItem('scanflow_token');
-      
+
       if (storedUser && token) {
         setUser(JSON.parse(storedUser));
       } else {

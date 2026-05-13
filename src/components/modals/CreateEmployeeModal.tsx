@@ -5,7 +5,6 @@ import {
   X, 
   User, 
   Phone, 
-  Mail,
   Loader2,
   Clock,
   Navigation,
@@ -18,7 +17,6 @@ export const CreateEmployeeModal = ({ isOpen, onClose, companyId, onSuccess }: a
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
-    email: '',
     password: '',
     phoneNumber: '',
     workTimings: { start: '09:00', end: '18:00' }
@@ -41,7 +39,7 @@ export const CreateEmployeeModal = ({ isOpen, onClose, companyId, onSuccess }: a
       // Also create a User account for the employee for login
       await axios.post('/api/auth/register', {
         name: formData.name,
-        email: formData.email,
+        phoneNumber: formData.phoneNumber,
         password: formData.password,
         role: 'EMPLOYEE',
         companyId: companyId,
@@ -93,20 +91,6 @@ export const CreateEmployeeModal = ({ isOpen, onClose, companyId, onSuccess }: a
                   required
                   value={formData.phoneNumber}
                   onChange={(e) => setFormData({ ...formData, phoneNumber: e.target.value })}
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none font-medium"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-bold text-slate-700">Email Address</label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input 
-                  type="email" 
-                  required
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                   className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none font-medium"
                 />
               </div>

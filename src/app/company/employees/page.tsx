@@ -121,9 +121,11 @@ export default function EmployeesPage() {
                 <p className="text-sm font-medium text-slate-400 mb-4 uppercase tracking-wider text-[10px]">Field Technician</p>
 
                 <div className="space-y-3 pt-4 border-t border-slate-100">
-                  <div className="flex items-center gap-2 text-sm text-slate-600">
-                    <Mail className="w-4 h-4 text-slate-400" /> {emp.email}
-                  </div>
+                  {emp.email && (
+                    <div className="flex items-center gap-2 text-sm text-slate-600">
+                      <Mail className="w-4 h-4 text-slate-400" /> {emp.email}
+                    </div>
+                  )}
                   <div className="flex items-center gap-2 text-sm text-slate-600">
                     <Phone className="w-4 h-4 text-slate-400" /> {emp.phoneNumber}
                   </div>

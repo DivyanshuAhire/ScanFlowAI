@@ -12,16 +12,16 @@ export default function VerifyPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { login } = useUser();
-  const email = searchParams.get('email');
+  const identifier = searchParams.get('email');
 
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!email) {
+    if (!identifier) {
       router.push('/auth/login');
     }
-  }, [email]);
+  }, [identifier]);
 
   const handleChange = (index: number, value: string) => {
     if (value.length > 1) value = value.slice(-1);
@@ -46,7 +46,7 @@ export default function VerifyPage() {
 
     try {
       setLoading(true);
-      const res = await axios.post('/api/auth/verify-otp', { email, otp: otpString });
+      const res = await axios.post('/api/auth/verify-otp', { identifier, otp: otpString });
       toast.success('Verification successful!');
       login(res.data.user, res.data.token);
       
@@ -72,9 +72,10 @@ export default function VerifyPage() {
           <ShieldCheck className="w-10 h-10" />
         </div>
 
-        <h2 className="text-3xl font-black text-slate-900 mb-2">Verify Email</h2>
+        <h2 className="text-3xl font-black text-slate-900 mb-2">Verification</h2>
         <p className="text-slate-500 font-medium mb-10 flex items-center justify-center gap-2">
-          <Mail className="w-4 h-4" /> We sent a code to <span className="text-blue-600">{email}</span>
+          {identifier?.includes('@') ? <Mail className="w-4 h-4" /> : <ShieldCheck className="w-4 h-4" />}
+          We sent a code to <span className="text-blue-600">{identifier}</span>
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-10">

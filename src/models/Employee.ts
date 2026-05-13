@@ -2,7 +2,7 @@ import mongoose, { Schema, Document, Model } from 'mongoose';
 
 export interface IEmployee extends Document {
   name: string;
-  email: string;
+  email?: string;
   phoneNumber: string;
   companyId: mongoose.Types.ObjectId;
   assignedRouteId?: mongoose.Types.ObjectId;
@@ -23,8 +23,8 @@ export interface IEmployee extends Document {
 const EmployeeSchema: Schema = new Schema(
   {
     name: { type: String, required: true },
-    email: { type: String, required: true, unique: true },
-    phoneNumber: { type: String, required: true },
+    email: { type: String, unique: true, sparse: true, required: false, default: undefined },
+    phoneNumber: { type: String, required: true, unique: true, index: true },
     companyId: { type: Schema.Types.ObjectId, ref: 'Company', required: true, index: true },
     assignedRouteId: { type: Schema.Types.ObjectId, ref: 'Route' },
     baseLocation: {

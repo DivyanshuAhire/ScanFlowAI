@@ -9,7 +9,8 @@ import {
   Activity,
   MoreVertical,
   Loader2,
-  Navigation
+  Navigation,
+  Building2
 } from 'lucide-react';
 import { useUser } from '@/context/UserContext';
 import { useRouter } from 'next/navigation';
@@ -116,25 +117,61 @@ export default function ClustersPage() {
               ) : clusters.length === 0 ? (
                 <p className="text-slate-500 font-medium">No clusters to display</p>
               ) : (
-                clusters.map((cluster, i) => (
-                  <div 
-                    key={cluster._id}
-                    className="absolute group cursor-pointer"
-                    style={{ 
-                      left: `${30 + (i * 15)}%`, 
-                      top: `${40 + (i * 10)}%` 
-                    }}
-                  >
-                    {/* Pulsing ring */}
-                    <div className="absolute -inset-4 bg-blue-500/20 rounded-full animate-ping group-hover:bg-blue-500/40 duration-1000"></div>
-                    {/* Node */}
-                    <div className="relative w-4 h-4 bg-blue-500 border-2 border-white rounded-full shadow-[0_0_15px_rgba(59,130,246,0.8)]"></div>
-                    {/* Label */}
-                    <div className="absolute top-6 left-1/2 -translate-x-1/2 whitespace-nowrap px-2 py-1 bg-white rounded-md shadow-xl opacity-0 group-hover:opacity-100 transition-all">
-                      <p className="text-[10px] font-black text-slate-900">{cluster.name}</p>
+                <>
+                  {/* Connection Lines Layer */}
+                  <svg className="absolute inset-0 w-full h-full pointer-events-none z-0">
+                    {clusters.map((_, i) => {
+                      const x2 = 30 + (i * 15);
+                      const y2 = 40 + (i * 10);
+                      return (
+                        <line 
+                          key={`line-${i}`}
+                          x1="50%" 
+                          y1="50%" 
+                          x2={`${x2}%`} 
+                          y2={`${y2}%`} 
+                          stroke="rgba(59, 130, 246, 0.3)" 
+                          strokeWidth="1"
+                          strokeDasharray="5,5"
+                        />
+                      );
+                    })}
+                  </svg>
+
+                  {/* Company HQ */}
+                  <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-20">
+                    <div className="relative">
+                      <div className="absolute -inset-8 bg-emerald-500/20 rounded-full animate-pulse"></div>
+                      <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center text-white shadow-[0_0_20px_rgba(16,185,129,0.5)] border-2 border-white">
+                        <Building2 className="w-6 h-6" />
+                      </div>
+                      <div className="absolute -top-10 left-1/2 -translate-x-1/2 whitespace-nowrap px-3 py-1 bg-slate-900 text-white rounded text-[10px] font-bold">
+                        Company HQ
+                      </div>
                     </div>
                   </div>
-                ))
+
+                  {/* Cluster Nodes */}
+                  {clusters.map((cluster, i) => (
+                    <div 
+                      key={cluster._id}
+                      className="absolute group cursor-pointer z-10"
+                      style={{ 
+                        left: `${30 + (i * 15)}%`, 
+                        top: `${40 + (i * 10)}%` 
+                      }}
+                    >
+                      {/* Pulsing ring */}
+                      <div className="absolute -inset-4 bg-blue-500/20 rounded-full animate-ping group-hover:bg-blue-500/40 duration-1000"></div>
+                      {/* Node */}
+                      <div className="relative w-4 h-4 bg-blue-500 border-2 border-white rounded-full shadow-[0_0_15px_rgba(59,130,246,0.8)]"></div>
+                      {/* Label */}
+                      <div className="absolute top-6 left-1/2 -translate-x-1/2 whitespace-nowrap px-2 py-1 bg-white rounded-md shadow-xl opacity-0 group-hover:opacity-100 transition-all">
+                        <p className="text-[10px] font-black text-slate-900">{cluster.name}</p>
+                      </div>
+                    </div>
+                  ))}
+                </>
               )}
             </div>
           </div>

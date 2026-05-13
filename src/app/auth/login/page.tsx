@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Mail, Lock, ArrowRight, ShieldCheck, Hospital, Loader2 } from 'lucide-react';
+import { Mail, Lock, ArrowRight, ShieldCheck, Hospital, Loader2, Phone, User } from 'lucide-react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { useUser } from '@/context/UserContext';
@@ -11,25 +11,25 @@ import { cn } from '@/lib/utils';
 export default function LoginPage() {
   const router = useRouter();
   const { login } = useUser();
-  const [type, setType] = useState<'COMPANY' | 'CLINIC'>('COMPANY');
-  const [email, setEmail] = useState('');
+  const [type, setType] = useState<'COMPANY' | 'CLINIC' | 'EMPLOYEE'>('COMPANY');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email || !password) {
+    if (!identifier || !password) {
       toast.error('Please fill in all fields');
       return;
     }
 
     try {
       setLoading(true);
-      const res = await axios.post('/api/auth/login', { email, password });
+      const res = await axios.post('/api/auth/login', { identifier, password });
       
       if (res.data.requiresVerification) {
         toast.info('OTP required for verification');
-        router.push(`/auth/verify?email=${encodeURIComponent(email)}`);
+        router.push(`/auth/verify?email=${encodeURIComponent(identifier)}`);
         return;
       }
 
@@ -105,18 +105,37 @@ export default function LoginPage() {
             >
               <Hospital className="w-4 h-4" /> Clinic
             </button>
+            <button 
+              onClick={() => setType('EMPLOYEE')}
+              className={cn(
+                "flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold transition-all",
+                type === 'EMPLOYEE' ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
+              )}
+            >
+              <User className="w-4 h-4" /> Employee
+            </button>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="space-y-2">
-              <label className="text-sm font-bold text-slate-700">Email Address</label>
+              <label className="text-sm font-bold text-slate-700">
+                {type === 'EMPLOYEE' ? 'Phone Number' : 'Email Address'}
+              </label>
               <div className="relative">
-                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                {type === 'EMPLOYEE' ? (
+                  <Phone className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                ) : (
+                  <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                )}
                 <input 
-                  type="email" 
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder={type === 'COMPANY' ? "admin@scanflow.com" : "clinic@clinic.com"}
+                  type={type === 'EMPLOYEE' ? "text" : "email"} 
+                  value={identifier}
+                  onChange={(e) => setIdentifier(e.target.value)}
+                  placeholder={
+                    type === 'COMPANY' ? "admin@scanflow.com" : 
+                    type === 'CLINIC' ? "clinic@clinic.com" : 
+                    "Enter phone number"
+                  }
                   className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-medium"
                 />
               </div>
