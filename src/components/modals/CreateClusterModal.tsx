@@ -16,7 +16,6 @@ export const CreateClusterModal = ({ isOpen, onClose, companyId, onSuccess }: an
   const [formData, setFormData] = useState({
     name: '',
     distanceFromHQ: 0,
-    estimatedTravelTimeFromHQ: 0,
     location: { lat: 19.0760, lng: 72.8777 }
   });
 
@@ -67,33 +66,17 @@ export const CreateClusterModal = ({ isOpen, onClose, companyId, onSuccess }: an
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-6">
-            <div className="space-y-2">
-              <label className="text-sm font-bold text-slate-700">Dist. from HQ (km)</label>
-              <div className="relative">
-                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input 
-                  type="number" 
-                  required
-                  value={formData.distanceFromHQ}
-                  onChange={(e) => setFormData({ ...formData, distanceFromHQ: parseFloat(e.target.value) })}
-                  className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none font-medium"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-bold text-slate-700">Travel Time (mins)</label>
-              <div className="relative">
-                <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input 
-                  type="number" 
-                  required
-                  value={formData.estimatedTravelTimeFromHQ}
-                  onChange={(e) => setFormData({ ...formData, estimatedTravelTimeFromHQ: parseInt(e.target.value) })}
-                  className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none font-medium"
-                />
-              </div>
+          <div className="space-y-2">
+            <label className="text-sm font-bold text-slate-700">Dist. from HQ (km)</label>
+            <div className="relative">
+              <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <input 
+                type="number" 
+                required
+                value={formData.distanceFromHQ}
+                onChange={(e) => setFormData({ ...formData, distanceFromHQ: parseFloat(e.target.value) })}
+                className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none font-medium"
+              />
             </div>
           </div>
 
