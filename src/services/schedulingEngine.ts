@@ -1,201 +1,221 @@
-import { Appointment, Employee, Clinic, Cluster, ClusterDistanceMatrix, OfficeTimings, AppointmentStatus } from '@/models';
-import mongoose from 'mongoose';
-import { addMinutes, format, parse, isWithinInterval, startOfDay, endOfDay } from 'date-fns';
+import { Appointment, Clinic, Cluster, Employee } from '@/models';
+import { spatialGraphService } from './spatialGraphService';
+import { routeMomentumService } from './routeMomentumService';
+import { parse, addMinutes, isBefore, isAfter, startOfDay, endOfDay, setHours, setMinutes } from 'date-fns';
+
+const EFFECTIVE_APPOINTMENT_DURATION = 35; // minutes
 
 export class SchedulingEngineService {
+
   /**
-   * STEP 1: Filter Valid Slots
+   * Assesses which technician should be assigned an appointment at a specific clinic and time.
+   */
+  async assignTechnician(companyId: string, clinicId: string, appointmentDate: Date, timeSlot: string): Promise<string | null> {
+    await spatialGraphService.buildGraph(companyId);
+
+    const clinic = await Clinic.findById(clinicId).lean() as any;
+    if (!clinic || !clinic.clusterId) return null;
+
+    const targetCluster = await Cluster.findById(clinic.clusterId).lean() as any;
+    if (!targetCluster) return null;
+
+    const appointmentStartTime = parse(timeSlot, 'HH:mm', appointmentDate);
+
+    // Get active technicians
+    const technicians = await Employee.find({ companyId, status: 'ACTIVE', isDeleted: false }).lean() as any[];
+
+    // Fetch appointments for today for these technicians
+    const dayAppointments = await Appointment.find({
+      companyId,
+      appointmentDate: { $gte: startOfDay(appointmentDate), $lte: endOfDay(appointmentDate) },
+      isDeleted: false
+    }).populate('clinicId').lean() as any[];
+
+    let bestTechnicianId: string | null = null;
+    let lowestScore = Infinity;
+
+    for (const tech of technicians) {
+      const techAppointments = dayAppointments.filter(app => app.employeeId?.toString() === tech._id.toString())
+        .sort((a, b) => a.timeSlot.localeCompare(b.timeSlot)); // Ensure sorted by time
+
+      // Find previous and next appointments
+      let previousApp = null;
+      let nextApp = null;
+
+      for (let i = 0; i < techAppointments.length; i++) {
+        const appTime = parse(techAppointments[i].timeSlot, 'HH:mm', appointmentDate);
+        if (isBefore(appTime, appointmentStartTime) || techAppointments[i].timeSlot === timeSlot) {
+            // Cannot overlap exactly
+            if (techAppointments[i].timeSlot === timeSlot) {
+                previousApp = 'CONFLICT';
+                break;
+            }
+            previousApp = techAppointments[i];
+        } else if (isAfter(appTime, appointmentStartTime)) {
+            nextApp = techAppointments[i];
+            break;
+        }
+      }
+
+      if (previousApp === 'CONFLICT') continue; // Hard conflict at same time
+
+      // Calculate feasible insertion
+      let previousClusterId = null;
+      let previousClusterDistHQ = null;
+      let previousEndTime = startOfDay(appointmentDate); // Assume available from start of day
+
+      if (previousApp) {
+        const prevClinic = previousApp.clinicId;
+        previousClusterId = prevClinic.clusterId.toString();
+        const prevClusterObj = await Cluster.findById(previousClusterId).lean() as any;
+        previousClusterDistHQ = prevClusterObj?.distanceFromHQ || 0;
+        const prevStartTime = parse(previousApp.timeSlot, 'HH:mm', appointmentDate);
+        previousEndTime = addMinutes(prevStartTime, EFFECTIVE_APPOINTMENT_DURATION);
+      }
+
+      let travelTimeToTarget = 0;
+      let distanceToTarget = 0;
+      
+      if (previousClusterId && previousClusterId !== targetCluster._id.toString()) {
+         distanceToTarget = spatialGraphService.calculateDistance(previousClusterId, targetCluster._id.toString());
+         travelTimeToTarget = spatialGraphService.calculateTravelTime(distanceToTarget);
+      }
+
+      const arrivalTime = addMinutes(previousEndTime, travelTimeToTarget);
+
+      // Check feasibility: Can they arrive before the new appointment starts?
+      if (isAfter(arrivalTime, appointmentStartTime)) {
+          continue; // Infeasible
+      }
+
+      // Check feasibility against next appointment
+      let nextClusterId = null;
+      let nextClusterDistHQ = null;
+      if (nextApp) {
+          const nextClinic = nextApp.clinicId;
+          nextClusterId = nextClinic.clusterId.toString();
+          const nextClusterObj = await Cluster.findById(nextClusterId).lean() as any;
+          nextClusterDistHQ = nextClusterObj?.distanceFromHQ || 0;
+          
+          let travelTimeFromTarget = 0;
+          if (targetCluster._id.toString() !== nextClusterId) {
+             const distFromTarget = spatialGraphService.calculateDistance(targetCluster._id.toString(), nextClusterId);
+             travelTimeFromTarget = spatialGraphService.calculateTravelTime(distFromTarget);
+          }
+
+          const targetEndTime = addMinutes(appointmentStartTime, EFFECTIVE_APPOINTMENT_DURATION);
+          const arrivalAtNext = addMinutes(targetEndTime, travelTimeFromTarget);
+          const nextStartTime = parse(nextApp.timeSlot, 'HH:mm', appointmentDate);
+
+          if (isAfter(arrivalAtNext, nextStartTime)) {
+              continue; // Infeasible
+          }
+      }
+
+      // SCORING
+      let score = 0;
+
+      // Distance and Time penalties
+      score += (distanceToTarget * 5);
+      score += (travelTimeToTarget * 3);
+
+      // Same cluster bonus
+      if (previousClusterId === targetCluster._id.toString()) {
+          score -= 80;
+      }
+
+      // Route continuity and Momentum (simplified for brevity, assume shared route check)
+      let routeSwitch = true;
+      if (previousClusterId) {
+          const prevCluster = await Cluster.findById(previousClusterId).lean() as any;
+          const commonRoutes = prevCluster.routeGroupIds.filter((rId: any) => targetCluster.routeGroupIds.some((trId: any) => trId.toString() === rId.toString()));
+          if (commonRoutes.length > 0) {
+              routeSwitch = false;
+              score -= 40; // Same Route Continuity
+          }
+      }
+
+      if (routeSwitch && previousClusterId) {
+          score += 70; // Route Switch Penalty
+      }
+
+      // Momentum
+      if (previousClusterId && nextClusterId) {
+          score += routeMomentumService.calculateMomentumScore(previousClusterDistHQ, targetCluster.distanceFromHQ, nextClusterDistHQ);
+      } else if (previousClusterId) {
+          // Just forward momentum from previous
+           score += routeMomentumService.calculateMomentumScore(null, previousClusterDistHQ, targetCluster.distanceFromHQ);
+      }
+
+      if (score < lowestScore) {
+          lowestScore = score;
+          bestTechnicianId = tech._id.toString();
+      }
+    }
+
+    return bestTechnicianId;
+  }
+
+  /**
+   * Calculates available hourly slots for a company on a specific date.
    */
   static async getAvailableSlots(companyId: string, date: Date, clinicId?: string) {
-    let officeTimings = await OfficeTimings.findOne({ companyId });
-    
-    // Fallback to defaults if not configured
-    if (!officeTimings) {
-      officeTimings = {
-        openingTime: '09:00',
-        closingTime: '18:00',
-        appointmentInterval: 30,
-        holidays: ['Sunday'],
-        blackoutTimings: []
-      } as any;
-    }
-
-    // Check if day is a holiday
-    const dayName = format(date, 'EEEE');
-    if (officeTimings.holidays.includes(dayName)) {
-      return [];
-    }
-
-    const technicians = await Employee.find({ companyId, status: 'ACTIVE', isDeleted: false });
-    const totalTechs = technicians.length;
-    const isHoliday = officeTimings.holidays.includes(dayName);
-
-    if (isHoliday) {
-      return [];
-    }
-
     const slots: { time: string; available: boolean; remaining: number; reason?: string }[] = [];
-    let currentTime = parse(officeTimings.openingTime, 'HH:mm', date);
-    const endTime = parse(officeTimings.closingTime, 'HH:mm', date);
+    
+    // Hourly slots from 09:00 to 17:00 (last booking at 5 PM)
+    const hours = ['09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00'];
 
-    // Fetch all appointments for this day to check capacity
+    // Get active technicians
+    const technicians = await Employee.find({ companyId, status: 'ACTIVE', isDeleted: false }).lean();
+    const totalTechs = technicians.length;
+
+    // Get appointments for the day
     const dayAppointments = await Appointment.find({
       companyId,
       appointmentDate: { $gte: startOfDay(date), $lte: endOfDay(date) },
-      status: { $in: [AppointmentStatus.ASSIGNED, AppointmentStatus.CONFIRMED, AppointmentStatus.IN_PROGRESS] }
-    });
+      isDeleted: false
+    }).lean();
 
-    while (currentTime < endTime) {
-      const slotStr = format(currentTime, 'HH:mm');
+    for (const hour of hours) {
+      const bookedTechs = dayAppointments.filter(app => app.timeSlot === hour);
+      const bookedCount = bookedTechs.length;
       
-      // Check blackout timings
-      const isBlackout = officeTimings.blackoutTimings.some(bt => {
-        const start = parse(bt.start, 'HH:mm', date);
-        const end = parse(bt.end, 'HH:mm', date);
-        return currentTime >= start && currentTime < end;
+      const available = bookedCount < totalTechs;
+      
+      slots.push({
+        time: hour,
+        available: available,
+        remaining: Math.max(0, totalTechs - bookedCount),
+        reason: !available ? 'Fully booked' : undefined
       });
-
-      if (!isBlackout) {
-        // Capacity check: how many techs are booked during this time?
-        const slotApps = dayAppointments.filter(app => {
-          const appStart = parse(app.timeSlot, 'HH:mm', date);
-          const appEnd = addMinutes(appStart, app.duration);
-          return (currentTime >= appStart && currentTime < appEnd);
-        });
-
-        const bookedCount = slotApps.length;
-        const clinicAlreadyBooked = clinicId && slotApps.some(app => app.clinicId?.toString() === clinicId);
-
-        slots.push({
-          time: slotStr,
-          available: totalTechs > 0 && bookedCount < totalTechs && !clinicAlreadyBooked,
-          remaining: Math.max(0, totalTechs - bookedCount),
-          reason: clinicAlreadyBooked 
-            ? 'Clinic already has a scan at this time' 
-            : (totalTechs === 0 ? 'No active technicians' : (bookedCount >= totalTechs ? 'Fully booked' : undefined))
-        });
-      }
-      
-      currentTime = addMinutes(currentTime, officeTimings.appointmentInterval);
     }
 
     return slots;
   }
 
   /**
-   * Main Assignment Algorithm
+   * Helper method to auto-assign a technician to an appointment and save it.
    */
-  static async autoAssignEmployee(appointmentId: string) {
+  async autoAssignEmployee(appointmentId: string): Promise<void> {
     const appointment = await Appointment.findById(appointmentId);
-    if (!appointment) throw new Error('Appointment not found');
+    if (!appointment || appointment.employeeId) return;
 
-    const { companyId, clinicId, appointmentDate, timeSlot, duration } = appointment;
-    const clinic = await Clinic.findById(clinicId).populate('clusterId');
-    if (!clinic) throw new Error('Clinic not found');
+    const techId = await this.assignTechnician(
+      appointment.companyId.toString(),
+      appointment.clinicId.toString(),
+      appointment.appointmentDate,
+      appointment.timeSlot
+    );
 
-    const employees = await Employee.find({ companyId, status: 'ACTIVE', isDeleted: false });
-    
-    let bestEmployee = null;
-    let minScore = Infinity;
-
-    for (const employee of employees) {
-      // STEP 6: Conflict Detection (Basic)
-      const hasConflict = await this.checkConflict(employee._id as string, appointmentDate, timeSlot, duration);
-      if (hasConflict) continue;
-
-      let score = 0;
-
-      // STEP 2: Route Matching (Direct)
-      if (employee.assignedRouteId?.toString() === clinic.routeId?.toString()) {
-        score -= 100; // High priority for same route
-      }
-
-      // STEP 3: Same Cluster Optimization (via Route Group)
-      const cluster = clinic.clusterId as any;
-      if (cluster && (cluster.routeGroupIds || []).some((rg: any) => rg.toString() === employee.assignedRouteId?.toString())) {
-        score -= 50;
-      }
-
-      // Check existing appointments for the day to find proximity
-      const dailyApps = await Appointment.find({
-        employeeId: employee._id,
-        appointmentDate: { $gte: startOfDay(appointmentDate), $lte: endOfDay(appointmentDate) },
-        status: { $ne: AppointmentStatus.CANCELLED }
-      }).sort({ timeSlot: 1 });
-
-      if (dailyApps.length > 0) {
-        // Find nearest appointment in time
-        // Calculate travel feasibility between appointments
-        const feasibility = await this.checkTravelFeasibility(employee._id as string, appointment, dailyApps);
-        if (!feasibility.possible) continue;
-        
-        score += feasibility.travelTime; // Lower travel time is better
-      } else {
-        // STEP 5: Free employee fallback - prioritize free employees slightly 
-        // to distribute load if no route match found
-        score += 50; 
-      }
-
-      if (score < minScore) {
-        minScore = score;
-        bestEmployee = employee;
-      }
-    }
-
-    if (bestEmployee) {
-      appointment.employeeId = bestEmployee._id as mongoose.Types.ObjectId;
-      appointment.status = AppointmentStatus.ASSIGNED;
+    if (techId) {
+      appointment.employeeId = techId as any;
+      appointment.status = 'ASSIGNED' as any;
       await appointment.save();
-
-      // Trigger Notifications (Step 7)
-      // await WhatsAppService.sendAssignmentNotification(appointment);
-
-      return bestEmployee;
+      console.log(`Auto-assigned technician ${techId} to appointment ${appointmentId}`);
+    } else {
+      console.log(`Could not find a feasible technician for appointment ${appointmentId}`);
     }
-
-    return null;
-  }
-
-  private static async checkConflict(employeeId: string, date: Date, timeSlot: string, duration: number) {
-    const start = parse(timeSlot, 'HH:mm', date);
-    const end = addMinutes(start, duration);
-
-    const existing = await Appointment.find({
-      employeeId,
-      appointmentDate: { $gte: startOfDay(date), $lte: endOfDay(date) },
-      status: { $in: [AppointmentStatus.ASSIGNED, AppointmentStatus.CONFIRMED, AppointmentStatus.IN_PROGRESS] }
-    });
-
-    return existing.some(app => {
-      const appStart = parse(app.timeSlot, 'HH:mm', date);
-      const appEnd = addMinutes(appStart, app.duration);
-      return (start < appEnd && end > appStart);
-    });
-  }
-
-  private static async checkTravelFeasibility(employeeId: string, newApp: any, dailyApps: any[]) {
-    // Find appointments immediately before and after
-    const newStart = parse(newApp.timeSlot, 'HH:mm', newApp.appointmentDate);
-    const newEnd = addMinutes(newStart, newApp.duration);
-
-    let before = null;
-    let after = null;
-
-    for (const app of dailyApps) {
-      const appStart = parse(app.timeSlot, 'HH:mm', app.appointmentDate);
-      if (appStart < newStart) before = app;
-      if (appStart > newStart && !after) after = app;
-    }
-
-    // In a real app, query ClusterDistanceMatrix
-    // For now, calculate a rough travel time if clusters are different
-    let travelTime = 15; // default 15 mins
-    
-    if (before && before.clinicId?.toString() !== newApp.clinicId?.toString()) {
-      // If coming from a different clinic, add 15 mins travel
-      travelTime = 30;
-    }
-
-    return { possible: true, travelTime };
   }
 }
+
+export const schedulingEngineService = new SchedulingEngineService();

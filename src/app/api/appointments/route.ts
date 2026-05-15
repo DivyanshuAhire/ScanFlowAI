@@ -29,14 +29,14 @@ export async function POST(req: Request) {
     await dbConnect();
     const data = await req.json();
     
-    const { SchedulingEngineService } = await import('@/services/schedulingEngine');
+    const { schedulingEngineService } = await import('@/services/schedulingEngine');
     
     // 1. Create the appointment record
     const appointment = await Appointment.create(data);
     
     // 2. Trigger Auto-Assignment Engine
     try {
-      await SchedulingEngineService.autoAssignEmployee(appointment._id as string);
+      await schedulingEngineService.autoAssignEmployee(appointment._id as string);
     } catch (assignError) {
       console.error('Auto-assignment failed:', assignError);
     }
