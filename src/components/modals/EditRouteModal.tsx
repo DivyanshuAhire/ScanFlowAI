@@ -26,10 +26,15 @@ export const EditRouteModal = ({ isOpen, onClose, companyId, route, onSuccess }:
       // Fetch all clusters for the company
       axios.get(`/api/clusters?companyId=${companyId}`).then(res => {
         setClusters(res.data);
-        // Pre-select clusters that belong to this route
-        const routeClusters = res.data
-          .filter((c: any) => (c.routeGroupIds || []).some((rg: any) => (rg._id || rg) === route._id))
-          .map((c: any) => c._id);
+        // Pre-select clusters that belong to this route, preserving stored sequence
+        let routeClusters = [];
+        if (route.clusterIds && route.clusterIds.length > 0) {
+          routeClusters = route.clusterIds.map((id: any) => id._id || id);
+        } else {
+          routeClusters = res.data
+            .filter((c: any) => (c.routeGroupIds || []).some((rg: any) => (rg._id || rg) === route._id))
+            .map((c: any) => c._id);
+        }
         setSelectedClusters(routeClusters);
       });
     }
@@ -124,9 +129,16 @@ export const EditRouteModal = ({ isOpen, onClose, companyId, route, onSuccess }:
                       : "bg-white border-slate-200 hover:border-slate-300"
                   )}
                 >
-                  <span className={cn("text-xs font-bold", selectedClusters.includes(cluster._id) ? "text-blue-700" : "text-slate-600")}>
-                    {cluster.name}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    {selectedClusters.includes(cluster._id) && (
+                      <span className="w-5 h-5 flex items-center justify-center bg-blue-100 text-blue-700 rounded-full text-[10px] font-black">
+                        {selectedClusters.indexOf(cluster._id) + 1}
+                      </span>
+                    )}
+                    <span className={cn("text-xs font-bold", selectedClusters.includes(cluster._id) ? "text-blue-700" : "text-slate-600")}>
+                      {cluster.name}
+                    </span>
+                  </div>
                   {selectedClusters.includes(cluster._id) && <Check className="w-4 h-4 text-blue-600" />}
                 </button>
               ))}

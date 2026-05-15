@@ -2,11 +2,12 @@ import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import { Appointment } from '@/models';
 
-export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     await dbConnect();
+    const { id } = await params;
     const data = await req.json();
-    const appointment = await Appointment.findByIdAndUpdate(params.id, data, { new: true });
+    const appointment = await Appointment.findByIdAndUpdate(id, data, { new: true });
     
     if (!appointment) {
       return NextResponse.json({ error: 'Appointment not found' }, { status: 404 });

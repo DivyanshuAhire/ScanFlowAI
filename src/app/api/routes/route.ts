@@ -12,7 +12,10 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'Company ID required' }, { status: 400 });
     }
 
-    const routes = await Route.find({ companyId, isDeleted: false }).sort({ name: 1 });
+    const routes = await Route.find({ 
+      companyId, 
+      isDeleted: { $ne: true } 
+    }).sort({ name: 1 });
     return NextResponse.json(routes);
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });

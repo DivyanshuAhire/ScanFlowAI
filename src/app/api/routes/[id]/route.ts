@@ -12,8 +12,8 @@ export async function PUT(
     const data = await req.json();
     const { name, clusterIds } = data;
 
-    // 1. Update the Route name
-    const route = await Route.findByIdAndUpdate(id, { name }, { new: true });
+    // 1. Update the Route name and cluster sequence
+    const route = await Route.findByIdAndUpdate(id, { name, clusterIds }, { new: true });
     if (!route) {
       return NextResponse.json({ error: 'Route not found' }, { status: 404 });
     }

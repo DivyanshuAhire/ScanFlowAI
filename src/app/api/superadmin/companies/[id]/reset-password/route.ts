@@ -5,17 +5,18 @@ import bcrypt from 'bcryptjs';
 
 export async function POST(
   req: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     await dbConnect();
+    const { id } = await params;
     const { userId, newPassword } = await req.json();
 
     if (!userId || !newPassword) {
       return NextResponse.json({ error: 'User ID and new password are required' }, { status: 400 });
     }
 
-    const user = await User.findOne({ _id: userId, companyId: params.id });
+    const user = await User.findOne({ _id: userId, companyId: id });
     if (!user) {
       return NextResponse.json({ error: 'User not found in this company' }, { status: 404 });
     }

@@ -12,11 +12,15 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'Company ID required' }, { status: 400 });
     }
 
-    const clusters = await Cluster.find({ companyId, isDeleted: false })
+    let clusters = await Cluster.find({ 
+      companyId, 
+      isDeleted: { $ne: true } 
+    })
       .populate('routeGroupIds', 'name')
       .sort({ name: 1 });
 
     // Auto-repair: If any cluster still has the old singular field, fix it on the fly
+    let needsReFetch = false;
     for (const cluster of clusters) {
       const raw = cluster.toObject() as any;
       if (raw.routeGroupId && (!raw.routeGroupIds || raw.routeGroupIds.length === 0)) {
@@ -27,7 +31,17 @@ export async function GET(req: Request) {
             $unset: { routeGroupId: 1 }
           }
         );
+        needsReFetch = true;
       }
+    }
+
+    if (needsReFetch) {
+      clusters = await Cluster.find({ 
+        companyId, 
+        isDeleted: { $ne: true } 
+      })
+        .populate('routeGroupIds', 'name')
+        .sort({ name: 1 });
     }
 
     return NextResponse.json(clusters);

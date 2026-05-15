@@ -9,6 +9,7 @@ export interface ICluster extends Document {
     lat: number;
     lng: number;
   };
+  visualAngle?: number;
   isDeleted: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -24,6 +25,7 @@ const ClusterSchema: Schema = new Schema(
       lat: { type: Number },
       lng: { type: Number },
     },
+    visualAngle: { type: Number },
     isDeleted: { type: Boolean, default: false },
   },
   { timestamps: true }

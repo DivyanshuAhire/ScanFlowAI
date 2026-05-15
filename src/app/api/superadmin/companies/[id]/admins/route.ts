@@ -5,12 +5,13 @@ import bcrypt from 'bcryptjs';
 
 export async function GET(
   req: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     await dbConnect();
+    const { id } = await params;
     const admins = await User.find({ 
-      companyId: params.id, 
+      companyId: id, 
       role: UserRole.COMPANY_ADMIN,
       isDeleted: false 
     }).select('-password -otp -refreshToken');
@@ -23,10 +24,11 @@ export async function GET(
 
 export async function POST(
   req: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     await dbConnect();
+    const { id } = await params;
     const { name, email, password, phoneNumber } = await req.json();
 
     if (!email || !password || !name) {
@@ -45,7 +47,7 @@ export async function POST(
       password: hashedPassword,
       phoneNumber,
       role: UserRole.COMPANY_ADMIN,
-      companyId: params.id,
+      companyId: id,
       isVerified: true, // Superadmin created admins are verified by default
     });
 

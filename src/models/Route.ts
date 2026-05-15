@@ -3,6 +3,7 @@ import mongoose, { Schema, Document, Model } from 'mongoose';
 export interface IRoute extends Document {
   name: string;
   companyId: mongoose.Types.ObjectId;
+  clusterIds?: mongoose.Types.ObjectId[];
   description?: string;
   isDeleted: boolean;
   createdAt: Date;
@@ -13,6 +14,7 @@ const RouteSchema: Schema = new Schema(
   {
     name: { type: String, required: true },
     companyId: { type: Schema.Types.ObjectId, ref: 'Company', required: true, index: true },
+    clusterIds: [{ type: Schema.Types.ObjectId, ref: 'Cluster' }],
     description: { type: String },
     isDeleted: { type: Boolean, default: false },
   },
