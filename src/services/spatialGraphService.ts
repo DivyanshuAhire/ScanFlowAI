@@ -1,4 +1,6 @@
+import mongoose from 'mongoose';
 import { Cluster, Route } from '@/models';
+import ClusterDistanceMatrix from '@/models/ClusterDistanceMatrix';
 
 interface GraphEdge {
   to: string;
@@ -11,14 +13,24 @@ export class SpatialGraphService {
   async buildGraph(companyId: string) {
     this.adjacencyList.clear();
 
-    const clusters = await Cluster.find({ companyId, isDeleted: false }).lean();
+    const [clusters, manualDistances] = await Promise.all([
+      Cluster.find({ companyId, isDeleted: false }).lean(),
+      ClusterDistanceMatrix.find({ companyId, isDeleted: false }).lean()
+    ]);
 
-    // Group clusters by route
+    // Initialize adjacency list
+    for (const cluster of clusters) {
+      this.adjacencyList.set(cluster._id.toString(), []);
+    }
+
+    // 1. Add Manual Distances (Highest Priority)
+    for (const md of manualDistances as any[]) {
+      this.addEdge(md.fromClusterId.toString(), md.toClusterId.toString(), md.distance);
+    }
+
+    // 2. Add Route-based Connections (Fallback/Heuristic)
     const routesMap = new Map<string, any[]>();
     for (const cluster of clusters) {
-      if (!this.adjacencyList.has(cluster._id.toString())) {
-        this.adjacencyList.set(cluster._id.toString(), []);
-      }
       for (const routeId of cluster.routeGroupIds) {
         const routeIdStr = routeId.toString();
         if (!routesMap.has(routeIdStr)) {
@@ -28,18 +40,22 @@ export class SpatialGraphService {
       }
     }
 
-    // Connect clusters on the same route
     for (const [routeId, routeClusters] of routesMap.entries()) {
-      // Sort by distance from HQ
       routeClusters.sort((a, b) => a.distanceFromHQ - b.distanceFromHQ);
 
       for (let i = 0; i < routeClusters.length - 1; i++) {
         const c1 = routeClusters[i];
         const c2 = routeClusters[i + 1];
+        
+        const c1Id = c1._id.toString();
+        const c2Id = c2._id.toString();
 
-        const weight = Math.abs(c2.distanceFromHQ - c1.distanceFromHQ);
-
-        this.addEdge(c1._id.toString(), c2._id.toString(), weight);
+        // Check if a manual edge already exists
+        const existing = this.adjacencyList.get(c1Id)?.find(e => e.to === c2Id);
+        if (!existing) {
+          const weight = Math.abs(c2.distanceFromHQ - c1.distanceFromHQ);
+          this.addEdge(c1Id, c2Id, weight);
+        }
       }
     }
   }

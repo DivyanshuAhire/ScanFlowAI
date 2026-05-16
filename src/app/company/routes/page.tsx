@@ -8,7 +8,8 @@ import {
   MoreVertical,
   Loader2,
   Activity,
-  Map
+  Map,
+  Navigation
 } from 'lucide-react';
 import { useUser } from '@/context/UserContext';
 import { useRouter } from 'next/navigation';
@@ -66,15 +67,21 @@ export default function RoutesPage() {
       
       <main className="flex-1 ml-64 p-8">
         <header className="flex items-center justify-between mb-8">
-          <div>
-            <h2 className="text-2xl font-bold text-slate-900">Route Management</h2>
-            <p className="text-slate-500">Group clusters and optimize employee paths.</p>
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-3">
+              <h1 className="text-3xl font-black text-slate-900 tracking-tight">Route Optimization</h1>
+              <div className="px-3 py-1 bg-blue-50 text-blue-600 rounded-full border border-blue-100 flex items-center gap-2">
+                <Navigation className="w-3.5 h-3.5" />
+                <span className="text-[10px] font-black uppercase tracking-widest">{routes.length} Active Routes</span>
+              </div>
+            </div>
+            <p className="text-slate-500 font-medium">Manage and optimize diagnostic scan sequences.</p>
           </div>
           <button 
             onClick={() => setIsModalOpen(true)}
             className="btn-primary flex items-center gap-2"
           >
-            <Plus className="w-4 h-4" /> Create Route
+            <Plus className="w-4 h-4" /> Create New Route
           </button>
         </header>
 

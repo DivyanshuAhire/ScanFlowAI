@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { useRouter } from 'next/navigation';
 import { Sidebar } from '@/components/layout/Sidebar';
@@ -13,7 +13,10 @@ import {
   Clock,
   User as UserIcon,
   MapPin,
-  Loader2
+  Loader2,
+  ChevronUp,
+  ChevronDown,
+  X
 } from 'lucide-react';
 import { useUser } from '@/context/UserContext';
 import { useAppointments } from '@/hooks/useAppointments';
@@ -42,6 +45,12 @@ export default function AppointmentsPage() {
   const { appointments, loading: appointmentsLoading, setAppointments } = useAppointments(user?.companyId || null);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  
+  // Filtering & Sorting State
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('ALL');
+  const [urgencyFilter, setUrgencyFilter] = useState('ALL');
+  const [sortConfig, setSortConfig] = useState({ key: 'appointmentDate', direction: 'desc' });
 
   useEffect(() => {
     if (authLoading) return;
@@ -66,6 +75,76 @@ export default function AppointmentsPage() {
     if (!user?.companyId) return;
     const res = await axios.get(`/api/appointments?companyId=${user.companyId}`);
     setAppointments(res.data);
+  };
+
+  const filteredAppointments = useMemo(() => {
+    let result = [...appointments];
+
+    // Search
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(app => 
+        app.clinicId?.name?.toLowerCase().includes(q) ||
+        app.clinicId?.location?.area?.toLowerCase().includes(q) ||
+        app.employeeId?.name?.toLowerCase().includes(q) ||
+        app.scanType?.toLowerCase().includes(q)
+      );
+    }
+
+    // Status Filter
+    if (statusFilter !== 'ALL') {
+      result = result.filter(app => app.status === statusFilter);
+    }
+
+    // Urgency Filter
+    if (urgencyFilter !== 'ALL') {
+      result = result.filter(app => app.urgency === urgencyFilter);
+    }
+
+    // Sorting
+    result.sort((a, b) => {
+      let aVal, bVal;
+      
+      switch (sortConfig.key) {
+        case 'clinic':
+          aVal = a.clinicId?.name || '';
+          bVal = b.clinicId?.name || '';
+          break;
+        case 'appointmentDate':
+          aVal = new Date(a.appointmentDate).getTime();
+          bVal = new Date(b.appointmentDate).getTime();
+          break;
+        case 'status':
+          aVal = a.status;
+          bVal = b.status;
+          break;
+        case 'employee':
+          aVal = a.employeeId?.name || 'zzz'; // Put unassigned at the end
+          bVal = b.employeeId?.name || 'zzz';
+          break;
+        default:
+          aVal = a[sortConfig.key];
+          bVal = b[sortConfig.key];
+      }
+
+      if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+      if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    return result;
+  }, [appointments, searchQuery, statusFilter, urgencyFilter, sortConfig]);
+
+  const toggleSort = (key: string) => {
+    setSortConfig(prev => ({
+      key,
+      direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc'
+    }));
+  };
+
+  const SortIcon = ({ column }: { column: string }) => {
+    if (sortConfig.key !== column) return null;
+    return sortConfig.direction === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />;
   };
 
   return (
@@ -95,23 +174,56 @@ export default function AppointmentsPage() {
 
         <div className="card-premium overflow-hidden !p-0">
           <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-white">
-            <div className="flex items-center gap-4 flex-1">
-              <div className="relative flex-1 max-w-md">
+            <div className="flex flex-wrap items-center gap-4 flex-1">
+              <div className="relative flex-1 max-w-md min-w-[240px]">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <input 
                   type="text" 
                   placeholder="Search clinics, areas, or employees..." 
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
                 />
               </div>
-              <button className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-600 bg-slate-50 border border-slate-200 rounded-lg hover:bg-slate-100 transition-colors">
-                <Filter className="w-4 h-4" /> Filters
-              </button>
-            </div>
-            <div className="flex gap-2">
-              <button className="p-2 text-slate-400 hover:text-slate-600 transition-colors">
-                <CalendarIcon className="w-5 h-5" />
-              </button>
+              
+              <div className="flex items-center gap-2">
+                <select 
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="px-3 py-2 text-sm font-medium text-slate-600 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="ALL">All Status</option>
+                  <option value="REQUESTED">Requested</option>
+                  <option value="ASSIGNED">Assigned</option>
+                  <option value="IN_PROGRESS">In Progress</option>
+                  <option value="COMPLETED">Completed</option>
+                  <option value="CANCELLED">Cancelled</option>
+                </select>
+
+                <select 
+                  value={urgencyFilter}
+                  onChange={(e) => setUrgencyFilter(e.target.value)}
+                  className="px-3 py-2 text-sm font-medium text-slate-600 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="ALL">All Urgency</option>
+                  <option value="HIGH">High</option>
+                  <option value="MEDIUM">Medium</option>
+                  <option value="LOW">Low</option>
+                </select>
+
+                {(searchQuery || statusFilter !== 'ALL' || urgencyFilter !== 'ALL') && (
+                  <button 
+                    onClick={() => {
+                      setSearchQuery('');
+                      setStatusFilter('ALL');
+                      setUrgencyFilter('ALL');
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-2 text-sm font-bold text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                  >
+                    <X className="w-4 h-4" /> Clear
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
@@ -121,30 +233,50 @@ export default function AppointmentsPage() {
                 <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
                 <p className="text-slate-500 font-medium">Fetching appointments...</p>
               </div>
-            ) : appointments.length === 0 ? (
+            ) : filteredAppointments.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 gap-4 text-center">
                 <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center text-slate-300">
-                  <CalendarIcon className="w-8 h-8" />
+                  <Search className="w-8 h-8" />
                 </div>
                 <div>
-                  <p className="text-slate-900 font-bold">No appointments found</p>
-                  <p className="text-slate-500 text-sm">Create your first appointment to see it here.</p>
+                  <p className="text-slate-900 font-bold">No matching appointments</p>
+                  <p className="text-slate-500 text-sm">Try adjusting your filters or search terms.</p>
                 </div>
               </div>
             ) : (
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-slate-50/50">
-                    <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Clinic & Area</th>
-                    <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Timing & Duration</th>
-                    <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Employee</th>
+                    <th 
+                      className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:text-blue-600 transition-colors"
+                      onClick={() => toggleSort('clinic')}
+                    >
+                      <div className="flex items-center gap-1">Clinic & Area <SortIcon column="clinic" /></div>
+                    </th>
+                    <th 
+                      className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:text-blue-600 transition-colors"
+                      onClick={() => toggleSort('appointmentDate')}
+                    >
+                      <div className="flex items-center gap-1">Timing & Duration <SortIcon column="appointmentDate" /></div>
+                    </th>
+                    <th 
+                      className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:text-blue-600 transition-colors"
+                      onClick={() => toggleSort('employee')}
+                    >
+                      <div className="flex items-center gap-1">Employee <SortIcon column="employee" /></div>
+                    </th>
                     <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Scan Type</th>
-                    <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
+                    <th 
+                      className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:text-blue-600 transition-colors"
+                      onClick={() => toggleSort('status')}
+                    >
+                      <div className="flex items-center gap-1">Status <SortIcon column="status" /></div>
+                    </th>
                     <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {appointments.map((app: any) => (
+                  {filteredAppointments.map((app: any) => (
                     <tr key={app._id} className="hover:bg-slate-50/50 transition-colors group">
                       <td className="px-6 py-4">
                         <div>
@@ -197,7 +329,9 @@ export default function AppointmentsPage() {
           </div>
 
           <div className="p-4 border-t border-slate-100 bg-white flex items-center justify-between">
-            <p className="text-sm text-slate-500">Showing 4 of 128 appointments</p>
+            <p className="text-sm text-slate-500">
+              Showing {filteredAppointments.length} of {appointments.length} appointments
+            </p>
             <div className="flex gap-2">
               <button className="px-3 py-1 text-sm bg-white border border-slate-200 rounded-md hover:bg-slate-50 disabled:opacity-50">Previous</button>
               <button className="px-3 py-1 text-sm bg-white border border-slate-200 rounded-md hover:bg-slate-50">Next</button>

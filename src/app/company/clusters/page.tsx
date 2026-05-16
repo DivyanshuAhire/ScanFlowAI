@@ -18,6 +18,8 @@ import axios from 'axios';
 import { cn } from '@/lib/utils';
 import { CreateClusterModal } from '@/components/modals/CreateClusterModal';
 import { EditClusterModal } from '@/components/modals/EditClusterModal';
+import { EditRouteModal } from '@/components/modals/EditRouteModal';
+import { CreateRouteModal } from '@/components/modals/CreateRouteModal';
 
 const ROUTE_COLORS = [
   'bg-blue-500',
@@ -46,20 +48,33 @@ export default function ClustersPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCluster, setEditingCluster] = useState<any>(null);
 
-   const [pan, setPan] = useState({ x: 0, y: 0 });
-   const [zoom, setZoom] = useState(1);
-    const [isDragging, setIsDragging] = useState(false);
-    const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
- 
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+
   const [manualOffsets, setManualOffsets] = useState<Record<string, number>>({});
   const [rotatingClusterId, setRotatingClusterId] = useState<string | null>(null);
   const [isSavingLayout, setIsSavingLayout] = useState(false);
   const mapRef = React.useRef<HTMLDivElement>(null);
+  const hasAutoFitted = React.useRef(false);
+  const [selectedRoute, setSelectedRoute] = useState<any>(null);
+  const [isRouteModalOpen, setIsRouteModalOpen] = useState(false);
+
+  const [isCreateRouteModalOpen, setIsCreateRouteModalOpen] = useState(false);
+
+  const [connectionMode, setConnectionMode] = useState(false);
+  const [selectedForConnection, setSelectedForConnection] = useState<string[]>([]);
+  const [manualDistances, setManualDistances] = useState<any[]>([]);
+  const [isDistanceModalOpen, setIsDistanceModalOpen] = useState(false);
+  const [pendingDistance, setPendingDistance] = useState<string>('');
+  const [isSavingDistance, setIsSavingDistance] = useState(false);
+  const [focusedRoute, setFocusedRoute] = useState<any>(null);
 
   const handleMouseDown = (e: React.MouseEvent) => {
     // Only pan if not clicking a cluster
     if ((e.target as HTMLElement).closest('.cluster-dot')) return;
-    
+
     setIsDragging(true);
     setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
   };
@@ -70,10 +85,10 @@ export default function ClustersPage() {
       // Calculate center of map container in pixels
       const centerX = rect.left + rect.width / 2 + pan.x * zoom;
       const centerY = rect.top + rect.height / 2 + pan.y * zoom;
-      
+
       // Calculate the current angle between center and mouse
       let angle = Math.atan2(e.clientY - centerY, e.clientX - centerX);
-      
+
       setManualOffsets(prev => ({
         ...prev,
         [rotatingClusterId]: angle
@@ -91,6 +106,28 @@ export default function ClustersPage() {
   const handleMouseUp = () => {
     setIsDragging(false);
     setRotatingClusterId(null);
+  };
+
+  const handleFitToView = () => {
+    if (clusters.length === 0) return;
+
+    // Find the max distance from HQ
+    let maxDist = 0;
+    clusters.forEach(c => {
+      const d = getClusterDistance(c);
+      if (d > maxDist) maxDist = d;
+    });
+
+    // Add some padding (20%)
+    const paddedDist = maxDist * 1.2;
+
+    // The coordinate system is 0-100 with HQ at 50,50.
+    // Available space in coordinate units is 100.
+    // So zoom should be 100 / (2 * paddedDist).
+    const newZoom = Math.min(100 / (2 * paddedDist), 1.5); // Cap zoom at 1.5x
+
+    setZoom(newZoom);
+    setPan({ x: 0, y: 0 });
   };
 
 
@@ -113,7 +150,7 @@ export default function ClustersPage() {
           dbOffsets[c._id] = c.visualAngle;
         }
       });
-      
+
       setManualOffsets(prev => ({
         ...dbOffsets,
         ...prev // Local changes win
@@ -122,6 +159,16 @@ export default function ClustersPage() {
       console.error(err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchDistances = async () => {
+    if (!user?.companyId) return;
+    try {
+      const res = await axios.get(`/api/clusters/distances?companyId=${user.companyId}`);
+      setManualDistances(res.data);
+    } catch (err) {
+      console.error(err);
     }
   };
 
@@ -151,14 +198,24 @@ export default function ClustersPage() {
       return;
     }
 
-    fetchClusters();
+    fetchClusters().then(() => {
+      // Only auto-fit on the very first load to avoid resetting user's view on refreshes
+      if (!hasAutoFitted.current && clusters.length > 0) {
+        setTimeout(() => {
+          handleFitToView();
+          hasAutoFitted.current = true;
+        }, 500);
+      }
+    });
+    fetchDistances();
   }, [user, authLoading, router]);
 
 
 
   const globalRank = [...clusters].sort((a, b) => (a.distanceFromHQ || 0) - (b.distanceFromHQ || 0));
-  
+
   const getClusterDistance = (cluster: any) => {
+    if (cluster.distanceFromHQ === 0) return 0;
     const idx = globalRank.findIndex(c => c._id === cluster._id);
     return 15 + ((idx >= 0 ? idx : 0) * 12);
   };
@@ -166,7 +223,7 @@ export default function ClustersPage() {
   // Group clusters by route, preserving the sequence defined in the Route model
   const groupedClusters: any = {};
   const assignedClusterIds = new Set<string>();
-  
+
   routes.forEach((route: any) => {
     const routeId = (route._id?.toString() || route._id);
     const clustersInRoute = (route.clusterIds || [])
@@ -200,16 +257,16 @@ export default function ClustersPage() {
   // Greedy Adjacency Sort: Order routes so that those sharing clusters are physically next to each other
   const sortedRouteIds: string[] = [];
   const remainingIds = Object.keys(groupedClusters).filter(id => id !== 'unassigned');
-  
+
   if (remainingIds.length > 0) {
     // Start with the route that has the most shared clusters to act as a hub
     remainingIds.sort((a, b) => {
-      const aShared = remainingIds.filter(other => a !== other && 
-        groupedClusters[a].clusters.some((c: any) => 
+      const aShared = remainingIds.filter(other => a !== other &&
+        groupedClusters[a].clusters.some((c: any) =>
           (c.routeGroupIds || []).some((rg: any) => (rg._id || rg).toString() === other)
         )).length;
-      const bShared = remainingIds.filter(other => b !== other && 
-        groupedClusters[b].clusters.some((c: any) => 
+      const bShared = remainingIds.filter(other => b !== other &&
+        groupedClusters[b].clusters.some((c: any) =>
           (c.routeGroupIds || []).some((rg: any) => (rg._id || rg).toString() === other)
         )).length;
       return bShared - aShared;
@@ -217,26 +274,26 @@ export default function ClustersPage() {
 
     let currentId = remainingIds.shift()!;
     sortedRouteIds.push(currentId);
-    
+
     while (remainingIds.length > 0) {
       let bestMatchIdx = -1;
       let maxShared = -1;
-      
+
       for (let i = 0; i < remainingIds.length; i++) {
         const otherId = remainingIds[i];
         const shared = groupedClusters[currentId].clusters.filter((c: any) =>
           (c.routeGroupIds || []).some((rg: any) => (rg._id || rg).toString() === otherId.toString())
         ).length;
-        
+
         if (shared > maxShared) {
           maxShared = shared;
           bestMatchIdx = i;
         }
       }
-      
+
       // If no shared clusters found, just take the next one in list
       if (bestMatchIdx === -1) bestMatchIdx = 0;
-      
+
       currentId = remainingIds.splice(bestMatchIdx, 1)[0];
       sortedRouteIds.push(currentId);
     }
@@ -246,7 +303,7 @@ export default function ClustersPage() {
   const visualGroups: any = {};
   let currentAngle = 30; // Start at a slight offset
   const totalRoutes = sortedRouteIds.length;
-  
+
   // Adaptive spacing: Shared routes get 45 deg, unshared get the remaining space
   const sharedCount = sortedRouteIds.filter((id, idx) => {
     if (idx === 0) return false;
@@ -255,7 +312,7 @@ export default function ClustersPage() {
       (c.routeGroupIds || []).some((rg: any) => (rg._id || rg).toString() === prevId.toString())
     );
   }).length;
-  
+
   const remainingSpace = 360 - (sharedCount * 45);
   const unsharedGap = Math.max(50, remainingSpace / Math.max(1, totalRoutes - sharedCount));
 
@@ -289,13 +346,13 @@ export default function ClustersPage() {
     const unassignedGroup = visualGroups['unassigned'];
     const unassignedClustersList = unassignedGroup.clusters;
     delete visualGroups['unassigned'];
-    
+
     unassignedClustersList.forEach((c: any, i: number) => {
       const tempId = `unassigned-temp-${i}`;
       // Use the base unassigned angle but spread them out slightly
       const spreadAngle = (unassignedGroup.angle * 180 / Math.PI) + (i * 30);
       const angleRad = spreadAngle * (Math.PI / 180);
-      
+
       visualGroups[tempId] = {
         id: tempId,
         name: 'Unassigned',
@@ -315,12 +372,12 @@ export default function ClustersPage() {
     }
 
     // Find ALL groups in visualGroups that contain this cluster
-    const containingGroups = Object.values(visualGroups).filter((g: any) => 
+    const containingGroups = Object.values(visualGroups).filter((g: any) =>
       g.clusters.some((c: any) => c._id.toString() === cluster._id.toString())
     );
 
     if (containingGroups.length === 0) return (45 * Math.PI / 180);
-    
+
     // Average the angles of all groups this cluster belongs to
     const sum = containingGroups.reduce((acc: number, g: any) => acc + g.angle, 0);
     return sum / containingGroups.length;
@@ -330,12 +387,12 @@ export default function ClustersPage() {
   Object.keys(visualGroups).forEach(key => {
     const group = visualGroups[key];
     const distances = group.clusters.map((c: any) => getClusterDistance(c));
-    const isRetracing = distances.some((d: number, i: number) => i > 0 && d <= distances[i-1]);
+    const isRetracing = distances.some((d: number, i: number) => i > 0 && d <= distances[i - 1]);
 
     visualGroups[key].clusters = visualGroups[key].clusters.map((cluster: any, i: number) => {
       const distance = getClusterDistance(cluster);
       let clusterAngle = getClusterAngle(cluster);
-      
+
       const isShared = (cluster.routeGroupIds || []).length > 1;
 
       // If the route retraces, apply a slight angular nudge per stop 
@@ -360,7 +417,7 @@ export default function ClustersPage() {
   const labelOffsets = useMemo(() => {
     const offsets: Record<string, number> = {};
     const clusterUsage: Record<string, number> = {};
-    
+
     // Process routes in sorted order
     sortedRouteIds.forEach((routeId) => {
       const group = visualGroups[routeId];
@@ -391,10 +448,24 @@ export default function ClustersPage() {
 
       <main className="flex-1 ml-64 p-8">
         <header className="flex items-center justify-between mb-8">
-          <div>
-            <h2 className="text-2xl font-bold text-slate-900">Cluster Visualization</h2>
-            <p className="text-slate-500">Geospatial grouping of clinics for route optimization.</p>
+          <div className="flex items-center gap-8">
+            <div>
+              <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Cluster Visualization</h2>
+              <p className="text-slate-500 text-sm">Geospatial grouping of clinics for route optimization.</p>
+            </div>
+            
+            <div className="flex items-center gap-4 border-l border-slate-200 pl-8">
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-600 rounded-xl border border-blue-100">
+                <Layers className="w-4 h-4" />
+                <span className="text-xs font-black uppercase tracking-wider">{clusters.length} Clusters</span>
+              </div>
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 text-emerald-600 rounded-xl border border-emerald-100">
+                <Navigation className="w-4 h-4" />
+                <span className="text-xs font-black uppercase tracking-wider">{routes.length} Routes</span>
+              </div>
+            </div>
           </div>
+
           <div className="flex items-center gap-3">
             {Object.keys(manualOffsets).length > 0 && (
               <button
@@ -406,6 +477,22 @@ export default function ClustersPage() {
                 {isSavingLayout ? 'Saving...' : 'Save Layout'}
               </button>
             )}
+            
+            <button
+              onClick={() => setConnectionMode(!connectionMode)}
+              className={cn(
+                "px-4 py-2 rounded-lg font-bold text-sm transition-colors flex items-center gap-2",
+                connectionMode ? "bg-slate-700 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+              )}
+            >
+              <Activity className="w-4 h-4" /> {connectionMode ? "Exit Connection Mode" : "Manage Distances"}
+            </button>
+            <button
+              onClick={() => setIsCreateRouteModalOpen(true)}
+              className="px-4 py-2 bg-blue-50 text-blue-600 rounded-lg font-bold text-sm hover:bg-blue-100 transition-colors flex items-center gap-2"
+            >
+              <Plus className="w-4 h-4" /> Add Route
+            </button>
             <button
               onClick={() => setIsModalOpen(true)}
               className="btn-primary flex items-center gap-2"
@@ -414,6 +501,80 @@ export default function ClustersPage() {
             </button>
           </div>
         </header>
+
+        <CreateRouteModal
+          isOpen={isCreateRouteModalOpen}
+          onClose={() => setIsCreateRouteModalOpen(false)}
+          companyId={user?.companyId}
+          onSuccess={fetchClusters}
+        />
+
+        <EditRouteModal
+          isOpen={isRouteModalOpen}
+          onClose={() => setIsRouteModalOpen(false)}
+          companyId={user?.companyId}
+          route={selectedRoute}
+          onSuccess={fetchClusters}
+        />
+
+        {/* Distance Management Modal */}
+        {isDistanceModalOpen && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+            <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden p-6 animate-in zoom-in duration-200">
+              <h3 className="text-lg font-bold text-slate-900 mb-2">Define Distance</h3>
+              <p className="text-xs text-slate-500 mb-6">
+                Enter distance between <strong>{clusters.find(c => c._id === selectedForConnection[0])?.name}</strong> and <strong>{clusters.find(c => c._id === selectedForConnection[1])?.name}</strong>.
+              </p>
+              <div className="space-y-4">
+                <div className="relative">
+                  <Activity className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input
+                    type="number"
+                    step="0.1"
+                    placeholder="Distance in KM"
+                    value={pendingDistance}
+                    onChange={(e) => setPendingDistance(e.target.value)}
+                    className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none font-medium"
+                    autoFocus
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => { setIsDistanceModalOpen(false); setSelectedForConnection([]); }}
+                    className="flex-1 py-2.5 bg-slate-100 text-slate-600 rounded-xl font-bold text-sm"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    disabled={!pendingDistance || isSavingDistance}
+                    onClick={async () => {
+                      try {
+                        setIsSavingDistance(true);
+                        await axios.post('/api/clusters/distances', {
+                          companyId: user?.companyId,
+                          fromClusterId: selectedForConnection[0],
+                          toClusterId: selectedForConnection[1],
+                          distance: parseFloat(pendingDistance)
+                        });
+                        await fetchDistances();
+                        setIsDistanceModalOpen(false);
+                        setSelectedForConnection([]);
+                        setPendingDistance('');
+                      } catch (err) {
+                        console.error(err);
+                      } finally {
+                        setIsSavingDistance(false);
+                      }
+                    }}
+                    className="flex-[2] py-2.5 bg-blue-600 text-white rounded-xl font-bold text-sm flex items-center justify-center gap-2"
+                  >
+                    {isSavingDistance ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save Distance"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         <CreateClusterModal
           isOpen={isModalOpen}
@@ -449,28 +610,46 @@ export default function ClustersPage() {
               </div>
 
               <div className="flex items-center gap-2 bg-white/10 backdrop-blur p-1 rounded-lg border border-white/10">
-                <button 
+                <button
                   onClick={() => setZoom(prev => Math.min(prev + 0.2, 3))}
                   className="w-8 h-8 flex items-center justify-center text-white hover:bg-white/10 rounded transition-colors font-bold"
                 >
                   +
                 </button>
                 <div className="w-[1px] h-4 bg-white/10 mx-1"></div>
-                <button 
+                <button
                   onClick={() => setZoom(prev => Math.max(prev - 0.2, 0.5))}
                   className="w-8 h-8 flex items-center justify-center text-white hover:bg-white/10 rounded transition-colors font-bold"
                 >
                   -
                 </button>
                 <div className="w-[1px] h-4 bg-white/10 mx-1"></div>
-                <button 
-                  onClick={() => { setPan({x: 0, y: 0}); setZoom(1); }}
+                <button
+                  onClick={handleFitToView}
                   className="px-2 h-8 flex items-center justify-center text-[10px] text-white/70 hover:text-white uppercase font-black"
                 >
-                  Reset
+                  Fit View
                 </button>
               </div>
             </div>
+
+            {/* Focused Route Indicator at Bottom */}
+            {focusedRoute && (
+              <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 animate-in slide-in-from-bottom-4 duration-300">
+                <div className="px-6 py-3 bg-slate-900/90 backdrop-blur-xl rounded-2xl border border-white/20 shadow-2xl flex items-center gap-4">
+                  <div className={cn("w-3 h-3 rounded-full animate-pulse", focusedRoute.color)}></div>
+                  <div className="flex flex-col">
+                    <span className="text-[10px] text-white/50 uppercase font-black tracking-widest leading-none mb-1">Active Route</span>
+                    <span className="text-sm text-white font-black">{focusedRoute.name}</span>
+                  </div>
+                  <div className="h-8 w-[1px] bg-white/10 mx-2"></div>
+                  <div className="flex flex-col">
+                    <span className="text-[10px] text-white/50 uppercase font-black tracking-widest leading-none mb-1">Clusters</span>
+                    <span className="text-sm text-white font-black">{focusedRoute.clusters.length}</span>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Interaction Layer */}
             <div
@@ -487,6 +666,37 @@ export default function ClustersPage() {
                 <p className="text-slate-500 font-medium">No clusters to display</p>
               ) : (
                 <div className="relative w-full h-full origin-center" style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}>
+                  {/* Manual Distances Layer */}
+                  <svg className="absolute inset-0 w-full h-full pointer-events-none z-0 overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none">
+                    {manualDistances.map((md: any) => {
+                      const fromId = md.fromClusterId?._id || md.fromClusterId;
+                      const toId = md.toClusterId?._id || md.toClusterId;
+                      const from = clusters.find(c => c._id === fromId);
+                      const to = clusters.find(c => c._id === toId);
+                      if (!from || !to) return null;
+
+                      const fromAngle = manualOffsets[fromId] || 0;
+                      const fromDist = getClusterDistance(from);
+                      const toAngle = manualOffsets[toId] || 0;
+                      const toDist = getClusterDistance(to);
+
+                      const fx = 50 + Math.cos(fromAngle) * fromDist;
+                      const fy = 50 + Math.sin(fromAngle) * fromDist;
+                      const tx = 50 + Math.cos(toAngle) * toDist;
+                      const ty = 50 + Math.sin(toAngle) * toDist;
+
+                      return (
+                        <g key={md._id}>
+                          <line x1={fx} y1={fy} x2={tx} y2={ty} stroke="#94a3b8" strokeWidth="0.3" strokeDasharray="1,1" opacity="0.4" />
+                          <rect x={(fx + tx) / 2 - 2} y={(fy + ty) / 2 - 1.5} width="4" height="3" rx="1" fill="white" opacity="0.8" />
+                          <text x={(fx + tx) / 2} y={(fy + ty) / 2 + 0.5} fill="#64748b" fontSize="1.5" fontWeight="black" textAnchor="middle">
+                            {md.distance}km
+                          </text>
+                        </g>
+                      );
+                    })}
+                  </svg>
+
                   {/* Connection Lines Layer */}
                   <svg className="absolute inset-0 w-full h-full pointer-events-none z-0 overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none">
                     {Object.values(visualGroups).map((group: any, groupIndex: number) => {
@@ -505,10 +715,23 @@ export default function ClustersPage() {
                             points={polylinePoints.join(' ')}
                             stroke={group.stroke}
                             fill="none"
-                            strokeWidth="1.2"
-                            opacity="0.1"
+                            strokeWidth="8"
+                            opacity="0"
                             strokeLinecap="round"
                             strokeLinejoin="round"
+                            className="cursor-pointer pointer-events-auto"
+                            onMouseEnter={() => setFocusedRoute(group)}
+                            onMouseLeave={() => setFocusedRoute(null)}
+                          />
+                          <polyline
+                            points={polylinePoints.join(' ')}
+                            stroke={group.stroke}
+                            fill="none"
+                            strokeWidth="1.2"
+                            opacity={focusedRoute?.id === group.id ? "0.4" : "0.1"}
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            className="transition-opacity duration-300"
                           />
 
                           {group.clusters.map((cluster: any, i: number) => {
@@ -517,12 +740,12 @@ export default function ClustersPage() {
                               const routeAngle = group.angle;
                               const clusterAngle = cluster.visualAngle || getClusterAngle(cluster);
                               const angleDiff = routeAngle - clusterAngle;
-                              
+
                               // Curvature direction depends on side relative to cluster
                               const curveDir = Math.sign(angleDiff) || 1;
                               const qx = (50 + cluster.x) / 2 + Math.cos(routeAngle + curveDir * 0.2) * 5;
                               const qy = (50 + cluster.y) / 2 + Math.sin(routeAngle + curveDir * 0.2) * 5;
-                              
+
                               return (
                                 <path
                                   key={`hq-line-${cluster._id}-${group.id}`}
@@ -540,7 +763,7 @@ export default function ClustersPage() {
                             // Curved path between clusters
                             const midX = (prev.x + cluster.x) / 2;
                             const midY = (prev.y + cluster.y) / 2;
-                            
+
                             // Base pull away from center
                             const distToCenter = Math.sqrt(Math.pow(midX - 50, 2) + Math.pow(midY - 50, 2));
                             let qx = midX + (midX - 50) / (distToCenter || 1) * 4;
@@ -551,23 +774,34 @@ export default function ClustersPage() {
                               const routeAngle = group.angle;
                               const clusterAngle = cluster.visualAngle || getClusterAngle(cluster);
                               const angleDiff = routeAngle - clusterAngle;
-                              
+
                               // Pull the control point perpendicular to the route trajectory 
                               // to create a 'hook' or 'spiral' landing effect.
                               const swoopPower = 8;
                               // The direction is chosen to 'overshoot' the cluster's averaged position
                               // making the line curve back into it.
-                              qx += Math.cos(routeAngle + Math.PI/2) * Math.sign(angleDiff) * swoopPower;
-                              qy += Math.sin(routeAngle + Math.PI/2) * Math.sign(angleDiff) * swoopPower;
+                              qx += Math.cos(routeAngle + Math.PI / 2) * Math.sign(angleDiff) * swoopPower;
+                              qy += Math.sin(routeAngle + Math.PI / 2) * Math.sign(angleDiff) * swoopPower;
                             }
 
                             return (
-                              <path
-                                key={`chain-line-${cluster._id}-${group.id}`}
-                                d={`M ${prev.x} ${prev.y} Q ${qx} ${qy} ${cluster.x} ${cluster.y}`}
-                                fill="none"
-                                stroke={group.stroke} strokeWidth="1.2" opacity="0.8" strokeLinecap="round"
-                              />
+                              <g key={`chain-group-${cluster._id}-${group.id}`} onMouseEnter={() => setFocusedRoute(group)} onMouseLeave={() => setFocusedRoute(null)}>
+                                {/* Hit area for hovering */}
+                                <path
+                                  d={`M ${prev.x} ${prev.y} Q ${qx} ${qy} ${cluster.x} ${cluster.y}`}
+                                  fill="none"
+                                  stroke="transparent" strokeWidth="8" className="cursor-pointer pointer-events-auto"
+                                />
+                                <path
+                                  d={`M ${prev.x} ${prev.y} Q ${qx} ${qy} ${cluster.x} ${cluster.y}`}
+                                  fill="none"
+                                  stroke={group.stroke} 
+                                  strokeWidth={focusedRoute?.id === group.id ? "2" : "1.2"} 
+                                  opacity={focusedRoute?.id === group.id ? "1" : "0.8"} 
+                                  strokeLinecap="round"
+                                  className="transition-all duration-300"
+                                />
+                              </g>
                             );
                           })}
                         </g>
@@ -603,51 +837,44 @@ export default function ClustersPage() {
                                 rotatingClusterId === cluster._id ? "cursor-grabbing scale-125" : "cursor-grab"
                               )}
                               style={{ left: `${cluster.x}%`, top: `${cluster.y}%` }}
-                              onClick={() => setEditingCluster(cluster)}
+                              onMouseEnter={() => setFocusedRoute(group)}
+                              onMouseLeave={() => setFocusedRoute(null)}
+                              onClick={() => {
+                                if (connectionMode) {
+                                  if (selectedForConnection.includes(cluster._id)) {
+                                    setSelectedForConnection(prev => prev.filter(id => id !== cluster._id));
+                                  } else {
+                                    const newSelected = [...selectedForConnection, cluster._id];
+                                    if (newSelected.length === 2) {
+                                      setSelectedForConnection(newSelected);
+                                      setIsDistanceModalOpen(true);
+                                    } else {
+                                      setSelectedForConnection(newSelected);
+                                    }
+                                  }
+                                } else {
+                                  setEditingCluster(cluster);
+                                }
+                              }}
                               onMouseDown={(e) => {
                                 e.stopPropagation();
-                                setRotatingClusterId(cluster._id);
+                                if (!connectionMode) setRotatingClusterId(cluster._id);
                               }}
                             >
                               <div className={cn("absolute -inset-4 rounded-full animate-ping duration-1000 opacity-20", group.color)}></div>
-                              <div className={cn("relative w-4 h-4 border-2 border-white rounded-full shadow-lg transition-transform", group.color, rotatingClusterId === cluster._id && "scale-110")}></div>
-                              <div className="absolute top-6 left-1/2 -translate-x-1/2 whitespace-nowrap px-2 py-1 bg-white rounded-md shadow-xl opacity-0 group-hover:opacity-100 transition-all border border-slate-100">
+                              <div className={cn(
+                                "relative w-4 h-4 border-2 border-white rounded-full shadow-lg transition-transform",
+                                group.color,
+                                rotatingClusterId === cluster._id && "scale-110",
+                                selectedForConnection.includes(cluster._id) && "ring-4 ring-slate-900 ring-offset-2"
+                              )} style={{ transform: `scale(${Math.max(1, 0.7 / zoom)})` }}></div>
+                              <div className="absolute top-6 left-1/2 -translate-x-1/2 whitespace-nowrap px-2 py-1 bg-white rounded-md shadow-xl opacity-0 group-hover:opacity-100 transition-all border border-slate-100" style={{ transform: `translateX(-50%) scale(${1 / zoom})`, transformOrigin: 'top center' }}>
                                 <p className="text-[10px] font-black text-slate-900">{cluster.name}</p>
                               </div>
                             </div>
                           );
                         })}
-                        {/* Route Path Label */}
-                        {(() => {
-                          const lastCluster = group.clusters[group.clusters.length - 1];
-                          if (!lastCluster || group.id === 'unassigned') return null;
-                          
-                          // Position label at the midpoint of the route vector
-                          const midDist = (getClusterDistance(lastCluster) * 0.6); // 60% out from HQ
-                          const angle = group.angle;
-                          const lx = 50 + Math.cos(angle) * midDist;
-                          const ly = 50 + Math.sin(angle) * midDist;
-                          
-                          // Calculate rotation in degrees
-                          let rotation = angle * (180 / Math.PI);
-                          // Keep text upright (between -90 and 90 degrees)
-                          if (rotation > 90 && rotation < 270) rotation += 180;
-                          
-                          return (
-                            <div
-                              className="absolute z-0 pointer-events-none"
-                              style={{ 
-                                left: `${lx}%`, 
-                                top: `${ly}%`,
-                                transform: `translate(-50%, -50%) rotate(${rotation}deg)`
-                              }}
-                            >
-                              <span className={cn("text-[8px] font-black uppercase tracking-[0.2em] px-2 py-0.5 rounded-full bg-white/10 text-white backdrop-blur-md border border-white/20 whitespace-nowrap shadow-xl", group.color.replace('bg-', 'text-'))}>
-                                {group.name}
-                              </span>
-                            </div>
-                          );
-                        })()}
+                         {/* Route Labels Removed as per request */}
                       </React.Fragment>
                     );
                   })}
@@ -667,10 +894,24 @@ export default function ClustersPage() {
             ) : (
               Object.values(visualGroups).map((group: any) => (
                 <div key={group.name + group.id} className="space-y-3">
-                  <div className="flex items-center gap-2 mb-2">
-                    <div className={cn("w-2 h-4 rounded-full", group.color)}></div>
-                    <h4 className="text-sm font-black text-slate-400 uppercase tracking-widest">{group.name}</h4>
-                    <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-md font-bold">{group.clusters.length}</span>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <div className={cn("w-2 h-4 rounded-full", group.color)}></div>
+                      <h4 className="text-sm font-black text-slate-400 uppercase tracking-widest">{group.name}</h4>
+                      <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-md font-bold">{group.clusters.length}</span>
+                    </div>
+                    {group.id !== 'unassigned' && !group.id.includes('unassigned-temp') && (
+                      <button
+                        onClick={() => {
+                          const route = routes.find(r => (r._id?.toString() || r._id) === group.id);
+                          setSelectedRoute(route);
+                          setIsRouteModalOpen(true);
+                        }}
+                        className="p-1 text-slate-400 hover:text-blue-600 transition-colors"
+                      >
+                        <MoreVertical className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
                   {group.clusters.map((cluster: any, i: number) => (
                     <div key={cluster._id + group.id} className="card-premium hover:border-blue-200 transition-all cursor-pointer group" onClick={() => setEditingCluster(cluster)}>

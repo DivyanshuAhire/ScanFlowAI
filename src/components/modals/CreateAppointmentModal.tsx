@@ -28,20 +28,23 @@ export const CreateAppointmentModal = ({ isOpen, onClose, companyId, clinicId, o
     scanType: '',
     notes: ''
   });
+  const [showSlots, setShowSlots] = useState(false);
 
   const fetchSlots = async (date: string) => {
-    if (!companyId) return;
+    if (!companyId || !formData.clinicId) return;
     try {
       setSlotsLoading(true);
-      const url = `/api/appointments/availability?companyId=${companyId}&date=${date}${formData.clinicId ? `&clinicId=${formData.clinicId}` : ''}`;
+      const url = `/api/appointments/availability?companyId=${companyId}&date=${date}&clinicId=${formData.clinicId}`;
       const res = await axios.get(url);
       setAvailableSlots(res.data);
+      setShowSlots(true);
       // Reset selected time if it's no longer available or was never set
       if (res.data.length > 0 && !res.data.find((s: any) => s.time === formData.timeSlot)?.available) {
         setFormData(prev => ({ ...prev, timeSlot: '' }));
       }
     } catch (err) {
       console.error('Failed to fetch slots', err);
+      toast.error('Failed to calculate availability.');
     } finally {
       setSlotsLoading(false);
     }
@@ -58,9 +61,13 @@ export const CreateAppointmentModal = ({ isOpen, onClose, companyId, clinicId, o
           setFormData(prev => ({ ...prev, scanType: res.data.scanTypes[0] }));
         }
       });
-      fetchSlots(formData.appointmentDate);
     }
   }, [isOpen, companyId]);
+
+  useEffect(() => {
+    setShowSlots(false);
+    setFormData(prev => ({ ...prev, timeSlot: '' }));
+  }, [formData.clinicId, formData.appointmentDate]);
 
   if (!isOpen) return null;
 
@@ -199,51 +206,70 @@ export const CreateAppointmentModal = ({ isOpen, onClose, companyId, clinicId, o
               {slotsLoading && <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />}
             </div>
 
-            <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 gap-2">
-              {availableSlots.length === 0 && !slotsLoading && (
-                <div className="col-span-full p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200">
-                  <p className="text-sm text-slate-500 font-medium">No slots available for this date.</p>
-                </div>
-              )}
-              {availableSlots.map((slot: any) => (
+            {!showSlots ? (
+              <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                <Clock className="w-8 h-8 text-slate-300 mx-auto mb-3" />
+                <p className="text-sm text-slate-600 font-bold mb-1">Check Capacity</p>
+                <p className="text-xs text-slate-500 mb-4">Calculate technician travel paths for this clinic.</p>
                 <button
-                  key={slot.time}
                   type="button"
-                  disabled={!slot.available}
-                  onClick={() => setFormData({ ...formData, timeSlot: slot.time })}
-                  className={cn(
-                    "group relative py-2 rounded-lg text-xs font-bold border transition-all",
-                    !slot.available 
-                      ? "bg-slate-50 border-slate-100 text-slate-300 cursor-not-allowed"
-                      : formData.timeSlot === slot.time
-                      ? "bg-blue-600 border-blue-600 text-white shadow-lg shadow-blue-200"
-                      : "bg-white border-slate-200 text-slate-600 hover:border-blue-400 hover:text-blue-600"
-                  )}
+                  disabled={!formData.clinicId || slotsLoading}
+                  onClick={() => fetchSlots(formData.appointmentDate)}
+                  className="px-6 py-2 bg-blue-600 text-white rounded-lg font-bold text-xs hover:bg-blue-700 transition-colors flex items-center gap-2 mx-auto disabled:opacity-50"
                 >
-                  {slot.time}
-                  {slot.available && (
-                    <span className={cn(
-                      "absolute -top-1 -right-1 w-2 h-2 rounded-full border border-white",
-                      slot.remaining > 1 ? "bg-emerald-500" : "bg-amber-500"
-                    )}></span>
-                  )}
-                  {/* Tooltip-like capacity info */}
-                  <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 hidden group-hover:block z-20 pointer-events-none">
-                    <div className="bg-slate-800 text-white text-[10px] px-2 py-1 rounded whitespace-nowrap">
-                      {slot.available ? `${slot.remaining} techs free` : 'Fully booked'}
-                    </div>
-                  </div>
+                  {slotsLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Clock className="w-3 h-3" />}
+                  Show Available Slots
                 </button>
-              ))}
-            </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 gap-2 animate-in fade-in slide-in-from-top-2 duration-300">
+                {availableSlots.length === 0 && !slotsLoading && (
+                  <div className="col-span-full p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                    <p className="text-sm text-slate-500 font-medium">No slots available for this date.</p>
+                  </div>
+                )}
+                {availableSlots.map((slot: any) => (
+                  <button
+                    key={slot.time}
+                    type="button"
+                    disabled={!slot.available}
+                    onClick={() => setFormData({ ...formData, timeSlot: slot.time })}
+                    className={cn(
+                      "group relative py-2 rounded-lg text-xs font-bold border transition-all",
+                      !slot.available 
+                        ? "bg-slate-50 border-slate-100 text-slate-300 cursor-not-allowed"
+                        : formData.timeSlot === slot.time
+                        ? "bg-blue-600 border-blue-600 text-white shadow-lg shadow-blue-200"
+                        : "bg-white border-slate-200 text-slate-600 hover:border-blue-400 hover:text-blue-600"
+                    )}
+                  >
+                    {slot.time}
+                    {slot.available && (
+                      <span className={cn(
+                        "absolute -top-1 -right-1 w-2 h-2 rounded-full border border-white",
+                        slot.remaining > 1 ? "bg-emerald-500" : "bg-amber-500"
+                      )}></span>
+                    )}
+                    {/* Tooltip-like capacity info */}
+                    <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 hidden group-hover:block z-20 pointer-events-none">
+                      <div className="bg-slate-800 text-white text-[10px] px-2 py-1 rounded whitespace-nowrap">
+                        {slot.available ? `${slot.remaining} techs free` : (slot.reason || 'Fully booked')}
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
-          <div className="p-4 bg-blue-50 rounded-2xl flex gap-3 items-start border border-blue-100">
-            <AlertCircle className="w-5 h-5 text-blue-600 shrink-0" />
-            <p className="text-xs text-blue-800 font-medium leading-relaxed">
-              <strong>Smart Scheduling:</strong> Our AI engine monitors technician capacity in real-time. Slots with <span className="text-amber-600 font-bold">amber dots</span> have limited capacity (1 technician left).
-            </p>
-          </div>
+          {showSlots && (
+            <div className="p-4 bg-blue-50 rounded-2xl flex gap-3 items-start border border-blue-100 animate-in fade-in duration-500">
+              <AlertCircle className="w-5 h-5 text-blue-600 shrink-0" />
+              <p className="text-xs text-blue-800 font-medium leading-relaxed">
+                <strong>Smart Scheduling:</strong> Our AI engine monitors technician capacity in real-time. Slots that are greyed out indicate that no technician can feasibly reach this clinic given their existing route.
+              </p>
+            </div>
+          )}
 
           <div className="flex gap-3 pt-4 border-t border-slate-100 shrink-0">
             <button 
