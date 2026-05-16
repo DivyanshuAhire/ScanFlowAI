@@ -10,7 +10,8 @@ import {
   MoreVertical,
   Loader2,
   Navigation,
-  Building2
+  Building2,
+  ChevronDown
 } from 'lucide-react';
 import { useUser } from '@/context/UserContext';
 import { useRouter } from 'next/navigation';
@@ -70,6 +71,19 @@ export default function ClustersPage() {
   const [pendingDistance, setPendingDistance] = useState<string>('');
   const [isSavingDistance, setIsSavingDistance] = useState(false);
   const [focusedRoute, setFocusedRoute] = useState<any>(null);
+  const [collapsedRoutes, setCollapsedRoutes] = useState<Set<string>>(new Set());
+
+  const toggleRouteCollapse = (routeId: string) => {
+    setCollapsedRoutes(prev => {
+      const next = new Set(prev);
+      if (next.has(routeId)) {
+        next.delete(routeId);
+      } else {
+        next.add(routeId);
+      }
+      return next;
+    });
+  };
 
   const handleMouseDown = (e: React.MouseEvent) => {
     // Only pan if not clicking a cluster
@@ -445,28 +459,27 @@ export default function ClustersPage() {
   return (
     <div className="flex min-h-screen bg-slate-50">
       <Sidebar />
-
-      <main className="flex-1 ml-64 p-8">
-        <header className="flex items-center justify-between mb-8">
-          <div className="flex items-center gap-8">
+      <main className="flex-1 lg:ml-64 p-4 lg:p-8 pt-20 lg:pt-8">
+        <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-8">
+          <div className="flex flex-col md:flex-row md:items-center gap-4 lg:gap-8">
             <div>
-              <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Cluster Visualization</h2>
-              <p className="text-slate-500 text-sm">Geospatial grouping of clinics for route optimization.</p>
+              <h2 className="text-2xl lg:text-3xl font-black text-slate-900 tracking-tight">Cluster Visualization</h2>
+              <p className="text-slate-500 text-sm font-medium">Geospatial grouping of clinics for route optimization.</p>
             </div>
             
-            <div className="flex items-center gap-4 border-l border-slate-200 pl-8">
+            <div className="flex items-center gap-3 md:border-l md:border-slate-200 md:pl-8">
               <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-600 rounded-xl border border-blue-100">
                 <Layers className="w-4 h-4" />
-                <span className="text-xs font-black uppercase tracking-wider">{clusters.length} Clusters</span>
+                <span className="text-[10px] font-black uppercase tracking-wider">{clusters.length} Clusters</span>
               </div>
               <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 text-emerald-600 rounded-xl border border-emerald-100">
                 <Navigation className="w-4 h-4" />
-                <span className="text-xs font-black uppercase tracking-wider">{routes.length} Routes</span>
+                <span className="text-[10px] font-black uppercase tracking-wider">{routes.length} Routes</span>
               </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             {Object.keys(manualOffsets).length > 0 && (
               <button
                 onClick={handleSaveLayout}
@@ -895,9 +908,10 @@ export default function ClustersPage() {
               Object.values(visualGroups).map((group: any) => (
                 <div key={group.name + group.id} className="space-y-3">
                   <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 cursor-pointer group/header" onClick={() => toggleRouteCollapse(group.id)}>
+                      <ChevronDown className={cn("w-4 h-4 text-slate-400 transition-transform duration-300", collapsedRoutes.has(group.id) ? "-rotate-90" : "rotate-0")} />
                       <div className={cn("w-2 h-4 rounded-full", group.color)}></div>
-                      <h4 className="text-sm font-black text-slate-400 uppercase tracking-widest">{group.name}</h4>
+                      <h4 className="text-sm font-black text-slate-400 uppercase tracking-widest group-hover/header:text-slate-600 transition-colors">{group.name}</h4>
                       <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-md font-bold">{group.clusters.length}</span>
                     </div>
                     {group.id !== 'unassigned' && !group.id.includes('unassigned-temp') && (
@@ -913,7 +927,7 @@ export default function ClustersPage() {
                       </button>
                     )}
                   </div>
-                  {group.clusters.map((cluster: any, i: number) => (
+                  {!collapsedRoutes.has(group.id) && group.clusters.map((cluster: any, i: number) => (
                     <div key={cluster._id + group.id} className="card-premium hover:border-blue-200 transition-all cursor-pointer group" onClick={() => setEditingCluster(cluster)}>
                       <div className="flex items-center justify-between mb-3">
                         <span className={cn("text-[10px] font-black uppercase tracking-tighter", group.color?.replace('bg-', 'text-') || 'text-slate-400')}>

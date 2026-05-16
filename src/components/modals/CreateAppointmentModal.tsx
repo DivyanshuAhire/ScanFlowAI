@@ -116,8 +116,8 @@ export const CreateAppointmentModal = ({ isOpen, onClose, companyId, clinicId, o
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
-      <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200 flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 z-[100] bg-slate-900/50 backdrop-blur-sm overflow-y-auto p-4 flex justify-center items-start lg:items-center">
+      <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl animate-in fade-in zoom-in duration-200 my-8">
         <div className="p-6 border-b border-slate-100 flex items-center justify-between shrink-0">
           <div>
             <h3 className="text-xl font-bold text-slate-900">New Scan Appointment</h3>
@@ -128,7 +128,8 @@ export const CreateAppointmentModal = ({ isOpen, onClose, companyId, clinicId, o
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-6 overflow-y-auto">
+        <form onSubmit={handleSubmit} className="p-6 pb-24 lg:pb-12 space-y-8">
+          <div className="space-y-8">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {!clinicId && (
               <div className="space-y-2">
@@ -262,16 +263,10 @@ export const CreateAppointmentModal = ({ isOpen, onClose, companyId, clinicId, o
             )}
           </div>
 
-          {showSlots && (
-            <div className="p-4 bg-blue-50 rounded-2xl flex gap-3 items-start border border-blue-100 animate-in fade-in duration-500">
-              <AlertCircle className="w-5 h-5 text-blue-600 shrink-0" />
-              <p className="text-xs text-blue-800 font-medium leading-relaxed">
-                <strong>Smart Scheduling:</strong> Our AI engine monitors technician capacity in real-time. Slots that are greyed out indicate that no technician can feasibly reach this clinic given their existing route.
-              </p>
-            </div>
-          )}
 
-          <div className="flex gap-3 pt-4 border-t border-slate-100 shrink-0">
+          </div>
+
+          <div className="flex gap-3 pt-6 border-t border-slate-100">
             <button 
               type="button"
               onClick={onClose}
@@ -287,6 +282,7 @@ export const CreateAppointmentModal = ({ isOpen, onClose, companyId, clinicId, o
               {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Confirm & Assign'}
             </button>
           </div>
+          <div className="h-24 lg:hidden" />
         </form>
       </div>
     </div>

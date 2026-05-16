@@ -12,7 +12,9 @@ import {
   Hospital,
   Truck,
   ShieldCheck,
-  LogOut
+  LogOut,
+  Menu,
+  X
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useUser } from '@/context/UserContext';
@@ -26,8 +28,8 @@ const menuConfigs = {
     { name: 'System Logs', icon: Truck, href: '/superadmin/logs' },
   ],
   COMPANY_ADMIN: [
-    { name: 'Dashboard', icon: LayoutDashboard, href: '/company/dashboard' },
     { name: 'Appointments', icon: Calendar, href: '/company/appointments' },
+    { name: 'Dashboard', icon: LayoutDashboard, href: '/company/dashboard' },
     { name: 'Clinics', icon: Hospital, href: '/company/clinics' },
     { name: 'Employees', icon: Users, href: '/company/employees' },
     { name: 'Clusters', icon: MapPin, href: '/company/clusters' },
@@ -35,8 +37,8 @@ const menuConfigs = {
     { name: 'Settings', icon: Settings, href: '/company/settings' },
   ],
   CLINIC_USER: [
-    { name: 'Dashboard', icon: LayoutDashboard, href: '/clinic/dashboard' },
     { name: 'Appointments', icon: Calendar, href: '/clinic/appointments' },
+    { name: 'Dashboard', icon: LayoutDashboard, href: '/clinic/dashboard' },
   ],
   EMPLOYEE: [
     { name: 'My Schedule', icon: Calendar, href: '/employee/dashboard' },
@@ -47,6 +49,7 @@ export const Sidebar = () => {
   const pathname = usePathname();
   const router = useRouter();
   const { logout, user } = useUser();
+  const [isOpen, setIsOpen] = React.useState(false);
   const currentMenu = menuConfigs[user?.role as keyof typeof menuConfigs] || [];
 
   const handleLogout = () => {
@@ -55,43 +58,71 @@ export const Sidebar = () => {
   };
 
   return (
-    <aside className="w-64 h-screen bg-slate-900 text-white flex flex-col fixed left-0 top-0 z-50">
-      <div className="p-6">
-        <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">
-          ScanFlow
-        </h1>
-      </div>
+    <>
+      {/* Mobile Toggle Button */}
+      <button 
+        onClick={() => setIsOpen(true)}
+        className="fixed top-4 left-4 z-40 p-2 bg-slate-900 text-white rounded-lg lg:hidden shadow-lg"
+      >
+        <Menu className="w-6 h-6" />
+      </button>
 
-      <nav className="flex-1 px-4 space-y-1">
-        {currentMenu.map((item: any) => {
-          const isActive = pathname === item.href;
-          return (
-            <Link
-              key={item.name}
-              href={item.href}
-              className={cn(
-                "flex items-center gap-3 px-4 py-3 rounded-lg transition-colors group",
-                isActive 
-                  ? "bg-blue-600 text-white" 
-                  : "text-slate-400 hover:bg-slate-800 hover:text-white"
-              )}
-            >
-              <item.icon className={cn("w-5 h-5", isActive ? "text-white" : "text-slate-400 group-hover:text-blue-400")} />
-              <span className="font-medium">{item.name}</span>
-            </Link>
-          );
-        })}
-      </nav>
+      {/* Backdrop for mobile */}
+      {isOpen && (
+        <div 
+          className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-40 lg:hidden"
+          onClick={() => setIsOpen(false)}
+        />
+      )}
 
-      <div className="p-4 border-t border-slate-800">
-        <button 
-          onClick={handleLogout}
-          className="flex items-center gap-3 px-4 py-3 w-full text-slate-400 hover:text-red-400 hover:bg-slate-800 rounded-lg transition-colors"
-        >
-          <LogOut className="w-5 h-5" />
-          <span className="font-medium">Logout</span>
-        </button>
-      </div>
-    </aside>
+      <aside className={cn(
+        "w-64 h-screen bg-slate-900 text-white flex flex-col fixed left-0 top-0 z-50 transition-transform duration-300 lg:translate-x-0",
+        isOpen ? "translate-x-0" : "-translate-x-full"
+      )}>
+        <div className="p-6 flex items-center justify-between">
+          <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">
+            ScanFlow
+          </h1>
+          <button 
+            onClick={() => setIsOpen(false)}
+            className="p-1 hover:bg-slate-800 rounded-lg lg:hidden"
+          >
+            <X className="w-6 h-6 text-slate-400" />
+          </button>
+        </div>
+
+        <nav className="flex-1 px-4 space-y-1 overflow-y-auto">
+          {currentMenu.map((item: any) => {
+            const isActive = pathname === item.href;
+            return (
+              <Link
+                key={item.name}
+                href={item.href}
+                onClick={() => setIsOpen(false)}
+                className={cn(
+                  "flex items-center gap-3 px-4 py-3 rounded-lg transition-colors group",
+                  isActive 
+                    ? "bg-blue-600 text-white" 
+                    : "text-slate-400 hover:bg-slate-800 hover:text-white"
+                )}
+              >
+                <item.icon className={cn("w-5 h-5", isActive ? "text-white" : "text-slate-400 group-hover:text-blue-400")} />
+                <span className="font-medium">{item.name}</span>
+              </Link>
+            );
+          })}
+        </nav>
+
+        <div className="p-4 border-t border-slate-800">
+          <button 
+            onClick={handleLogout}
+            className="flex items-center gap-3 px-4 py-3 w-full text-slate-400 hover:text-red-400 hover:bg-slate-800 rounded-lg transition-colors"
+          >
+            <LogOut className="w-5 h-5" />
+            <span className="font-medium">Logout</span>
+          </button>
+        </div>
+      </aside>
+    </>
   );
 };

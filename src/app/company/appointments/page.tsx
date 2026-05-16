@@ -151,19 +151,64 @@ export default function AppointmentsPage() {
     <div className="flex min-h-screen bg-slate-50">
       <Sidebar />
       
-      <main className="flex-1 ml-64 p-8">
-        <header className="flex items-center justify-between mb-8">
-          <div>
-            <h2 className="text-2xl font-bold text-slate-900">Appointments</h2>
-            <p className="text-slate-500">Manage and schedule scan appointments.</p>
+      <main className="flex-1 lg:ml-64 p-4 lg:p-8 pt-20 lg:pt-8">
+        <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-8">
+          <div className="flex-1">
+            <h2 className="text-2xl lg:text-3xl font-black text-slate-900 tracking-tight">Appointments</h2>
+            <p className="text-slate-500 font-medium text-sm">Real-time schedule management.</p>
           </div>
-          <button 
-            onClick={() => setIsModalOpen(true)}
-            className="btn-primary flex items-center gap-2"
-          >
-            <Plus className="w-4 h-4" /> New Appointment
-          </button>
+          
+          <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3 flex-1 max-w-2xl">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <input 
+                type="text" 
+                placeholder="Search clinic or tech..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none font-medium text-sm transition-all"
+              />
+            </div>
+            <button 
+              onClick={() => setIsModalOpen(true)}
+              className="btn-primary flex items-center justify-center gap-2 whitespace-nowrap"
+            >
+              <Plus className="w-4 h-4" /> New Appointment
+            </button>
+          </div>
         </header>
+
+        {/* Quick Sort Pills */}
+        <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-2 no-scrollbar">
+          <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest mr-2 whitespace-nowrap">Sort By:</span>
+          <button 
+            onClick={() => toggleSort('appointmentDate')}
+            className={cn(
+              "px-3 py-1.5 rounded-full text-xs font-bold transition-all border whitespace-nowrap",
+              sortConfig.key === 'appointmentDate' ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-600 border-slate-200 hover:border-slate-300"
+            )}
+          >
+            Time {sortConfig.key === 'appointmentDate' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+          </button>
+          <button 
+            onClick={() => toggleSort('clinic')}
+            className={cn(
+              "px-3 py-1.5 rounded-full text-xs font-bold transition-all border whitespace-nowrap",
+              sortConfig.key === 'clinic' ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-600 border-slate-200 hover:border-slate-300"
+            )}
+          >
+            Clinic {sortConfig.key === 'clinic' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+          </button>
+          <button 
+            onClick={() => toggleSort('employee')}
+            className={cn(
+              "px-3 py-1.5 rounded-full text-xs font-bold transition-all border whitespace-nowrap",
+              sortConfig.key === 'employee' ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-600 border-slate-200 hover:border-slate-300"
+            )}
+          >
+            Employee {sortConfig.key === 'employee' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+          </button>
+        </div>
 
         <CreateAppointmentModal 
           isOpen={isModalOpen} 
@@ -173,60 +218,6 @@ export default function AppointmentsPage() {
         />
 
         <div className="card-premium overflow-hidden !p-0">
-          <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-white">
-            <div className="flex flex-wrap items-center gap-4 flex-1">
-              <div className="relative flex-1 max-w-md min-w-[240px]">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input 
-                  type="text" 
-                  placeholder="Search clinics, areas, or employees..." 
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-                />
-              </div>
-              
-              <div className="flex items-center gap-2">
-                <select 
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                  className="px-3 py-2 text-sm font-medium text-slate-600 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="ALL">All Status</option>
-                  <option value="REQUESTED">Requested</option>
-                  <option value="ASSIGNED">Assigned</option>
-                  <option value="IN_PROGRESS">In Progress</option>
-                  <option value="COMPLETED">Completed</option>
-                  <option value="CANCELLED">Cancelled</option>
-                </select>
-
-                <select 
-                  value={urgencyFilter}
-                  onChange={(e) => setUrgencyFilter(e.target.value)}
-                  className="px-3 py-2 text-sm font-medium text-slate-600 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="ALL">All Urgency</option>
-                  <option value="HIGH">High</option>
-                  <option value="MEDIUM">Medium</option>
-                  <option value="LOW">Low</option>
-                </select>
-
-                {(searchQuery || statusFilter !== 'ALL' || urgencyFilter !== 'ALL') && (
-                  <button 
-                    onClick={() => {
-                      setSearchQuery('');
-                      setStatusFilter('ALL');
-                      setUrgencyFilter('ALL');
-                    }}
-                    className="flex items-center gap-1.5 px-3 py-2 text-sm font-bold text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                  >
-                    <X className="w-4 h-4" /> Clear
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-
           <div className="overflow-x-auto">
             {loading ? (
               <div className="flex flex-col items-center justify-center py-20 gap-4">
@@ -247,46 +238,56 @@ export default function AppointmentsPage() {
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-slate-50/50">
-                    <th 
-                      className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:text-blue-600 transition-colors"
-                      onClick={() => toggleSort('clinic')}
-                    >
-                      <div className="flex items-center gap-1">Clinic & Area <SortIcon column="clinic" /></div>
+                    <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">
+                      Appointment Details
                     </th>
                     <th 
-                      className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:text-blue-600 transition-colors"
+                      className="hidden lg:table-cell px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:text-blue-600 transition-colors"
                       onClick={() => toggleSort('appointmentDate')}
                     >
                       <div className="flex items-center gap-1">Timing & Duration <SortIcon column="appointmentDate" /></div>
                     </th>
                     <th 
-                      className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:text-blue-600 transition-colors"
+                      className="hidden lg:table-cell px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:text-blue-600 transition-colors"
                       onClick={() => toggleSort('employee')}
                     >
                       <div className="flex items-center gap-1">Employee <SortIcon column="employee" /></div>
                     </th>
-                    <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Scan Type</th>
+                    <th className="hidden lg:table-cell px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Scan Type</th>
                     <th 
-                      className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:text-blue-600 transition-colors"
+                      className="hidden lg:table-cell px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:text-blue-600 transition-colors"
                       onClick={() => toggleSort('status')}
                     >
                       <div className="flex items-center gap-1">Status <SortIcon column="status" /></div>
                     </th>
-                    <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Actions</th>
+                    <th className="hidden lg:table-cell px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {filteredAppointments.map((app: any) => (
                     <tr key={app._id} className="hover:bg-slate-50/50 transition-colors group">
                       <td className="px-6 py-4">
-                        <div>
-                          <p className="font-bold text-slate-900">{app.clinicId?.name}</p>
-                          <p className="text-xs text-slate-500 flex items-center gap-1 mt-0.5">
-                            <MapPin className="w-3 h-3" /> {app.clinicId?.location?.area}
-                          </p>
+                        <div className="space-y-2">
+                          <div>
+                            <p className="font-bold text-slate-900">{app.clinicId?.name}</p>
+                            <p className="text-xs text-slate-500 flex items-center gap-1 mt-0.5">
+                              <MapPin className="w-3 h-3" /> {app.clinicId?.location?.area}
+                            </p>
+                          </div>
+                          
+                          {/* Mobile-only info stack */}
+                          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 lg:hidden">
+                            <p className="text-[11px] font-black text-blue-600 flex items-center gap-1">
+                              <Clock className="w-3 h-3" /> {app.timeSlot}
+                            </p>
+                            <p className="text-[11px] font-bold text-slate-600 flex items-center gap-1">
+                              <UserIcon className="w-3 h-3 text-slate-400" /> {app.employeeId?.name || 'Unassigned'}
+                            </p>
+                            <StatusBadge status={app.status} />
+                          </div>
                         </div>
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="hidden lg:table-cell px-6 py-4">
                         <div>
                           <p className="text-sm font-medium text-slate-900 flex items-center gap-2">
                             <Clock className="w-4 h-4 text-slate-400" /> {app.timeSlot}
@@ -294,7 +295,7 @@ export default function AppointmentsPage() {
                           <p className="text-xs text-slate-500 mt-0.5">{format(new Date(app.appointmentDate), 'dd MMM yyyy')}</p>
                         </div>
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="hidden lg:table-cell px-6 py-4">
                         <div className="flex items-center gap-3">
                           <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-500">
                             <UserIcon className="w-4 h-4" />
@@ -302,7 +303,7 @@ export default function AppointmentsPage() {
                           <p className="text-sm font-medium text-slate-900">{app.employeeId?.name || 'Unassigned'}</p>
                         </div>
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="hidden lg:table-cell px-6 py-4">
                         <div>
                           <p className="text-sm font-medium text-slate-900">{app.scanType}</p>
                           <p className={cn(
@@ -313,10 +314,10 @@ export default function AppointmentsPage() {
                           </p>
                         </div>
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="hidden lg:table-cell px-6 py-4">
                         <StatusBadge status={app.status} />
                       </td>
-                      <td className="px-6 py-4 text-right">
+                      <td className="hidden lg:table-cell px-6 py-4 text-right">
                         <button className="p-2 text-slate-400 hover:text-slate-600 transition-colors rounded-lg hover:bg-slate-100">
                           <MoreVertical className="w-5 h-5" />
                         </button>

@@ -84,8 +84,8 @@ export const EditRouteModal = ({ isOpen, onClose, companyId, route, onSuccess }:
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
-      <div className="bg-white w-full max-w-xl rounded-3xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
+    <div className="fixed inset-0 z-[100] bg-slate-900/50 backdrop-blur-sm overflow-y-auto p-4 flex justify-center items-start lg:items-center">
+      <div className="bg-white w-full max-w-xl rounded-3xl shadow-2xl animate-in fade-in zoom-in duration-200 my-8">
         <div className="p-6 border-b border-slate-100 flex items-center justify-between">
           <div>
             <h3 className="text-xl font-bold text-slate-900">Edit Route</h3>
@@ -96,7 +96,8 @@ export const EditRouteModal = ({ isOpen, onClose, companyId, route, onSuccess }:
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-6">
+        <form onSubmit={handleSubmit} className="p-6 pb-24 lg:pb-12 space-y-8">
+          <div className="space-y-8">
           <div className="space-y-2">
             <label className="text-sm font-bold text-slate-700">Route Name</label>
             <div className="relative">
@@ -145,7 +146,8 @@ export const EditRouteModal = ({ isOpen, onClose, companyId, route, onSuccess }:
             </div>
           </div>
 
-          <div className="flex gap-3 pt-4">
+          </div>
+          <div className="flex gap-3 pt-6 border-t border-slate-100">
             <button 
               type="button"
               onClick={handleDelete}
@@ -169,6 +171,7 @@ export const EditRouteModal = ({ isOpen, onClose, companyId, route, onSuccess }:
               {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Save Changes'}
             </button>
           </div>
+          <div className="h-24 lg:hidden" />
         </form>
       </div>
     </div>

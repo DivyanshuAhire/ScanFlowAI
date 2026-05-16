@@ -1,7 +1,7 @@
 import { Appointment, Clinic, Cluster, Employee } from '@/models';
 import { spatialGraphService } from './spatialGraphService';
 import { routeMomentumService } from './routeMomentumService';
-import { parse, addMinutes, isBefore, isAfter, startOfDay, endOfDay, setHours, setMinutes } from 'date-fns';
+import { parse, addMinutes, isBefore, isAfter, startOfDay, endOfDay, format } from 'date-fns';
 
 const EFFECTIVE_APPOINTMENT_DURATION = 35; // minutes
 
@@ -14,15 +14,30 @@ export class SchedulingEngineService {
     await spatialGraphService.buildGraph(companyId);
 
     const clinic = await Clinic.findById(clinicId).lean() as any;
-    if (!clinic || !clinic.clusterId) return null;
+    if (!clinic) {
+      console.warn(`[ENGINE DEBUG] Clinic ${clinicId} not found`);
+      return null;
+    }
+    if (!clinic.clusterId) {
+      console.warn(`[ENGINE DEBUG] Clinic ${clinicId} (${clinic.name}) has no clusterId assigned`);
+      return null;
+    }
 
     const targetCluster = await Cluster.findById(clinic.clusterId).lean() as any;
-    if (!targetCluster) return null;
+    if (!targetCluster) {
+      console.warn(`[ENGINE DEBUG] Cluster ${clinic.clusterId} not found for clinic ${clinic.name}`);
+      return null;
+    }
 
     const appointmentStartTime = parse(timeSlot, 'HH:mm', appointmentDate);
 
     // Get active technicians
-    const technicians = await Employee.find({ companyId, status: 'ACTIVE', isDeleted: false }).lean() as any[];
+    let technicians = await Employee.find({ companyId, status: 'ACTIVE', isDeleted: false }).lean() as any[];
+    if (technicians.length === 0) {
+      // Fallback: try finding any non-deleted employee if none are marked 'ACTIVE'
+      technicians = await Employee.find({ companyId, isDeleted: false }).lean() as any[];
+      console.warn(`[ENGINE DEBUG] No 'ACTIVE' techs found, falling back to ${technicians.length} total employees`);
+    }
 
     // Fetch appointments for today for these technicians
     const dayAppointments = await Appointment.find({
@@ -34,14 +49,17 @@ export class SchedulingEngineService {
     let bestTechnicianId: string | null = null;
     let lowestScore = Infinity;
 
-    for (const tech of technicians) {
+    // Shuffle technicians to avoid alphabetical/ID bias for first appointments of the day
+    const shuffledTechnicians = [...technicians].sort(() => Math.random() - 0.5);
+
+    for (const tech of shuffledTechnicians) {
       const feasibility = await this.isTechnicianFeasible(tech, targetCluster, appointmentDate, timeSlot, dayAppointments);
       
       if (!feasibility.feasible) continue;
 
       // SCORING
       let score = 0;
-      const { distanceToTarget, travelTimeToTarget, previousClusterId, nextClusterId, previousClusterDistHQ, nextClusterDistHQ } = feasibility.details;
+      const { distanceToTarget, travelTimeToTarget, previousClusterId, nextClusterId, previousClusterDistHQ, nextClusterDistHQ, arrivalTime } = feasibility.details;
 
       // Distance and Time penalties
       score += (distanceToTarget * 5);
@@ -59,7 +77,7 @@ export class SchedulingEngineService {
           const commonRoutes = prevCluster.routeGroupIds.filter((rId: any) => targetCluster.routeGroupIds.some((trId: any) => trId.toString() === rId.toString()));
           if (commonRoutes.length > 0) {
               routeSwitch = false;
-              score -= 40; // Same Route Continuity
+              score -= 100; // Same Route Continuity (Increased for stickiness)
           }
       }
 
@@ -69,10 +87,18 @@ export class SchedulingEngineService {
 
       // Momentum
       if (previousClusterId && nextClusterId) {
-          score += routeMomentumService.calculateMomentumScore(previousClusterDistHQ, targetCluster.distanceFromHQ, nextClusterDistHQ);
+          score += routeMomentumService.calculateMomentumScore(
+            previousClusterDistHQ, 
+            targetCluster.distanceFromHQ || 0, 
+            nextClusterDistHQ || 0
+          );
       } else if (previousClusterId) {
           // Just forward momentum from previous
-           score += routeMomentumService.calculateMomentumScore(null, previousClusterDistHQ, targetCluster.distanceFromHQ);
+           score += routeMomentumService.calculateMomentumScore(
+             null, 
+             previousClusterDistHQ, 
+             targetCluster.distanceFromHQ || 0
+           );
       }
 
       if (score < lowestScore) {
@@ -97,8 +123,13 @@ export class SchedulingEngineService {
 
     for (let i = 0; i < techAppointments.length; i++) {
       const appTime = parse(techAppointments[i].timeSlot, 'HH:mm', date);
-      if (isBefore(appTime, appointmentStartTime) || techAppointments[i].timeSlot === timeSlot) {
-          if (techAppointments[i].timeSlot === timeSlot) return { feasible: false };
+      
+      // If they already have an appointment at this exact time, they are busy
+      if (techAppointments[i].timeSlot === timeSlot) {
+        return { feasible: false, reason: 'Technician already has an appointment at this time' };
+      }
+
+      if (isBefore(appTime, appointmentStartTime)) {
           previousApp = techAppointments[i];
       } else if (isAfter(appTime, appointmentStartTime)) {
           nextApp = techAppointments[i];
@@ -121,13 +152,24 @@ export class SchedulingEngineService {
 
     let travelTimeToTarget = 0;
     let distanceToTarget = 0;
-    if (previousClusterId && previousClusterId !== targetCluster._id.toString()) {
+    
+    // Explicit Same-Cluster Bypass: If in same cluster, distance is 0
+    const isSameCluster = previousClusterId && previousClusterId === targetCluster._id.toString();
+    
+    if (previousClusterId && !isSameCluster) {
+       // DIJKSTRA PATHFINDING
        distanceToTarget = spatialGraphService.calculateDistance(previousClusterId, targetCluster._id.toString());
        travelTimeToTarget = spatialGraphService.calculateTravelTime(distanceToTarget);
     }
 
     const arrivalTime = addMinutes(previousEndTime, travelTimeToTarget);
-    if (isAfter(arrivalTime, appointmentStartTime)) return { feasible: false };
+    const lateThreshold = addMinutes(appointmentStartTime, 10);
+    
+    // Buffer check: arrivalTime must be <= appointmentStartTime + 10 mins grace
+    if (isAfter(arrivalTime, lateThreshold)) {
+      const reason = `Too late: Arrives ${format(arrivalTime, 'HH:mm')}, Max allowed (with grace): ${format(lateThreshold, 'HH:mm')}`;
+      return { feasible: false, reason };
+    }
 
     let nextClusterId = null;
     let nextClusterDistHQ = null;
@@ -147,7 +189,12 @@ export class SchedulingEngineService {
         const arrivalAtNext = addMinutes(targetEndTime, travelTimeFromTarget);
         const nextStartTime = parse(nextApp.timeSlot, 'HH:mm', date);
 
-        if (isAfter(arrivalAtNext, nextStartTime)) return { feasible: false };
+        if (isAfter(arrivalAtNext, nextStartTime)) {
+          return { 
+            feasible: false, 
+            reason: `Cannot reach next appointment (${nextApp.timeSlot}) on time if this is accepted.` 
+          };
+        }
     }
 
     return { 
@@ -158,7 +205,8 @@ export class SchedulingEngineService {
         previousClusterId,
         nextClusterId,
         previousClusterDistHQ,
-        nextClusterDistHQ
+        nextClusterDistHQ,
+        arrivalTime
       } 
     };
   }
@@ -237,9 +285,9 @@ export class SchedulingEngineService {
       appointment.employeeId = techId as any;
       appointment.status = 'ASSIGNED' as any;
       await appointment.save();
-      console.log(`Auto-assigned technician ${techId} to appointment ${appointmentId}`);
+      console.log(`✅ [ENGINE] Auto-assigned technician ${techId} to appointment ${appointmentId}`);
     } else {
-      console.log(`Could not find a feasible technician for appointment ${appointmentId}`);
+      console.log(`❌ [ENGINE] No feasible technician found for appointment ${appointmentId} at ${appointment.timeSlot}`);
     }
   }
 }

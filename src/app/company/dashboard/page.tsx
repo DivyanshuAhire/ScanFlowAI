@@ -78,19 +78,19 @@ export default function CompanyDashboard() {
     <div className="flex min-h-screen bg-slate-50">
       <Sidebar />
       
-      <main className="flex-1 ml-64 p-8">
-        <header className="flex items-center justify-between mb-8">
+      <main className="flex-1 lg:ml-64 p-4 lg:p-8 pt-20 lg:pt-8">
+        <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
           <div>
-            <h2 className="text-2xl font-bold text-slate-900">Operations Overview</h2>
-            <p className="text-slate-500">Real-time monitoring of your diagnostic flow.</p>
+            <h2 className="text-2xl lg:text-3xl font-black text-slate-900 tracking-tight">Operations Overview</h2>
+            <p className="text-slate-500 font-medium text-sm">Real-time monitoring of your diagnostic flow.</p>
           </div>
-          <div className="flex gap-3">
-            <button className="px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium hover:bg-slate-50 transition-colors">
+          <div className="flex flex-wrap gap-3">
+            <button className="flex-1 md:flex-none px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium hover:bg-slate-50 transition-colors">
               Export Report
             </button>
             <button 
               onClick={() => setIsModalOpen(true)}
-              className="btn-primary"
+              className="flex-1 md:flex-none btn-primary"
             >
               Create Appointment
             </button>
