@@ -18,3 +18,20 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+
+export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    await dbConnect();
+    const { id } = await params;
+    
+    const appointment = await Appointment.findByIdAndDelete(id);
+    
+    if (!appointment) {
+      return NextResponse.json({ error: 'Appointment not found' }, { status: 404 });
+    }
+
+    return NextResponse.json({ message: 'Appointment deleted successfully' });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}

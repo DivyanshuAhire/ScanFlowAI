@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { 
   Search, 
@@ -16,7 +17,8 @@ import {
   Loader2,
   ChevronUp,
   ChevronDown,
-  X
+  X,
+  Trash2
 } from 'lucide-react';
 import { useUser } from '@/context/UserContext';
 import { useAppointments } from '@/hooks/useAppointments';
@@ -75,6 +77,17 @@ export default function AppointmentsPage() {
     if (!user?.companyId) return;
     const res = await axios.get(`/api/appointments?companyId=${user.companyId}`);
     setAppointments(res.data);
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this appointment?')) return;
+    try {
+      await axios.delete(`/api/appointments/${id}`);
+      toast.success('Appointment deleted');
+      fetchAppointments();
+    } catch (error: any) {
+      toast.error(error.response?.data?.error || 'Failed to delete appointment');
+    }
   };
 
   const filteredAppointments = useMemo(() => {
@@ -284,6 +297,12 @@ export default function AppointmentsPage() {
                               <UserIcon className="w-3 h-3 text-slate-400" /> {app.employeeId?.name || 'Unassigned'}
                             </p>
                             <StatusBadge status={app.status} />
+                            <button 
+                              onClick={() => handleDelete(app._id)}
+                              className="ml-auto p-1.5 text-rose-400 hover:text-rose-600 transition-colors rounded-lg hover:bg-rose-50"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
                           </div>
                         </div>
                       </td>
@@ -318,8 +337,12 @@ export default function AppointmentsPage() {
                         <StatusBadge status={app.status} />
                       </td>
                       <td className="hidden lg:table-cell px-6 py-4 text-right">
-                        <button className="p-2 text-slate-400 hover:text-slate-600 transition-colors rounded-lg hover:bg-slate-100">
-                          <MoreVertical className="w-5 h-5" />
+                        <button 
+                          onClick={() => handleDelete(app._id)}
+                          className="p-2 text-rose-400 hover:text-rose-600 transition-colors rounded-lg hover:bg-rose-50"
+                          title="Delete Appointment"
+                        >
+                          <Trash2 className="w-5 h-5" />
                         </button>
                       </td>
                     </tr>

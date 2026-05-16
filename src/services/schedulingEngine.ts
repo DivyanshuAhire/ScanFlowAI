@@ -101,6 +101,69 @@ export class SchedulingEngineService {
            );
       }
 
+      let isWorkingNearby = false;
+
+      if (previousClusterId) {
+          if (previousClusterId === targetCluster._id.toString() || distanceToTarget <= 5) {
+              isWorkingNearby = true;
+          }
+      }
+
+      if (nextClusterId && !isWorkingNearby) {
+          if (nextClusterId === targetCluster._id.toString()) {
+              isWorkingNearby = true;
+          } else {
+              const distToNext = spatialGraphService.calculateDistance(targetCluster._id.toString(), nextClusterId);
+              if (distToNext <= 5) {
+                  isWorkingNearby = true;
+              }
+          }
+      }
+
+      // Massive baseline bonus for being already active today to prevent picking brand new employees
+      const isActiveToday = dayAppointments.some(a => a.employeeId?.toString() === tech._id.toString());
+      if (isActiveToday) {
+          score -= 500;
+      }
+
+      // Additional bonus only if working in a nearby or same cluster
+      if (isWorkingNearby) {
+          score -= 100;
+      }
+
+      // Add penalty for chronological gap (idle time) to prefer technicians who are there *around that time*
+      const techAppointments = dayAppointments.filter(app => app.employeeId?.toString() === tech._id.toString())
+        .sort((a, b) => a.timeSlot.localeCompare(b.timeSlot));
+
+      let previousApp = null;
+      let nextApp = null;
+      for (let i = 0; i < techAppointments.length; i++) {
+        const appTime = parse(techAppointments[i].timeSlot, 'HH:mm', appointmentDate);
+        if (isBefore(appTime, appointmentStartTime)) {
+            previousApp = techAppointments[i];
+        } else if (isAfter(appTime, appointmentStartTime)) {
+            nextApp = techAppointments[i];
+            break;
+        }
+      }
+
+      let minIdleTime = Infinity;
+      if (previousApp) {
+          const prevEndTime = addMinutes(parse(previousApp.timeSlot, 'HH:mm', appointmentDate), EFFECTIVE_APPOINTMENT_DURATION);
+          const gap = Math.max(0, (appointmentStartTime.getTime() - prevEndTime.getTime()) / 60000);
+          minIdleTime = Math.min(minIdleTime, gap);
+      }
+      if (nextApp) {
+          const nextStartTime = parse(nextApp.timeSlot, 'HH:mm', appointmentDate);
+          const targetEndTime = addMinutes(appointmentStartTime, EFFECTIVE_APPOINTMENT_DURATION);
+          const gap = Math.max(0, (nextStartTime.getTime() - targetEndTime.getTime()) / 60000);
+          minIdleTime = Math.min(minIdleTime, gap);
+      }
+
+      if (minIdleTime !== Infinity && minIdleTime > 0) {
+          score += (minIdleTime * 2.0); // 2.0 points penalty per minute of idle waiting to aggressively snap to closest time slot
+      }
+
       if (score < lowestScore) {
           lowestScore = score;
           bestTechnicianId = tech._id.toString();
@@ -188,11 +251,12 @@ export class SchedulingEngineService {
         const targetEndTime = addMinutes(appointmentStartTime, EFFECTIVE_APPOINTMENT_DURATION);
         const arrivalAtNext = addMinutes(targetEndTime, travelTimeFromTarget);
         const nextStartTime = parse(nextApp.timeSlot, 'HH:mm', date);
+        const nextLateThreshold = addMinutes(nextStartTime, 10);
 
-        if (isAfter(arrivalAtNext, nextStartTime)) {
+        if (isAfter(arrivalAtNext, nextLateThreshold)) {
           return { 
             feasible: false, 
-            reason: `Cannot reach next appointment (${nextApp.timeSlot}) on time if this is accepted.` 
+            reason: `Cannot reach next appointment (${nextApp.timeSlot}) on time if this is accepted. Arrives at ${format(arrivalAtNext, 'HH:mm')}` 
           };
         }
     }
@@ -215,7 +279,7 @@ export class SchedulingEngineService {
    * Calculates available hourly slots for a company on a specific date.
    */
   static async getAvailableSlots(companyId: string, date: Date, clinicId?: string) {
-    const slots: { time: string; available: boolean; remaining: number; reason?: string }[] = [];
+    const slots: { time: string; available: boolean; remaining: number; reason?: string; isNearby?: boolean }[] = [];
     const hours = ['09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00'];
 
     const technicians = await Employee.find({ companyId, status: 'ACTIVE', isDeleted: false }).lean();
@@ -226,27 +290,92 @@ export class SchedulingEngineService {
     }).populate('clinicId').lean();
 
     let targetCluster: any = null;
-    if (clinicId) {
-      const clinic = await Clinic.findById(clinicId).lean() as any;
-      if (clinic?.clusterId) {
-        targetCluster = await Cluster.findById(clinic.clusterId).lean();
-      }
-    }
+    let clusterAppointments: any[] = [];
+    let nearbyClusterAppointments: any[] = [];
+    let nearbyClusterIds: string[] = [];
 
     const engine = new SchedulingEngineService();
-    if (clinicId) await spatialGraphService.buildGraph(companyId);
+
+    if (clinicId) {
+      await spatialGraphService.buildGraph(companyId);
+      const clinic = await Clinic.findById(clinicId).lean() as any;
+      
+      if (clinic?.clusterId) {
+        targetCluster = await Cluster.findById(clinic.clusterId).lean();
+        
+        if (targetCluster) {
+            const allClusters = await Cluster.find({ companyId, isDeleted: false }).lean();
+
+            for (const c of allClusters) {
+               if (c._id.toString() !== targetCluster._id.toString()) {
+                   const dist = spatialGraphService.calculateDistance(targetCluster._id.toString(), c._id.toString());
+                   if (dist <= 5) {
+                       nearbyClusterIds.push(c._id.toString());
+                   }
+               }
+            }
+
+            clusterAppointments = dayAppointments.filter(app => {
+              const appClinic = app.clinicId as any;
+              return appClinic?.clusterId?.toString() === targetCluster._id.toString();
+            });
+
+            nearbyClusterAppointments = dayAppointments.filter(app => {
+              const appClinic = app.clinicId as any;
+              return appClinic?.clusterId && nearbyClusterIds.includes(appClinic.clusterId.toString());
+            });
+        }
+      }
+    }
 
     for (const hour of hours) {
       let available = false;
       let remainingCount = 0;
+      let reason: string | undefined;
+      let isNearby = false;
 
       if (targetCluster) {
-        // Smart availability: Check if AT LEAST ONE technician is feasible
-        for (const tech of technicians) {
-          const res = await engine.isTechnicianFeasible(tech, targetCluster, date, hour, dayAppointments);
-          if (res.feasible) {
-            available = true;
-            remainingCount++;
+        const isClusterBookedAtHour = clusterAppointments.some(app => app.timeSlot === hour);
+        
+        if (isClusterBookedAtHour) {
+           available = false;
+           remainingCount = 0;
+           reason = 'Cluster slot fully booked';
+        } else {
+          // Smart availability: Check if AT LEAST ONE technician is feasible
+          const feasibleTechIds = new Set<string>();
+          for (const tech of technicians) {
+            const res = await engine.isTechnicianFeasible(tech, targetCluster, date, hour, dayAppointments);
+            if (res.feasible) {
+              available = true;
+              remainingCount++;
+              feasibleTechIds.add(tech._id.toString());
+            }
+          }
+
+          if (available) {
+             const hourInt = parseInt(hour.split(':')[0]);
+             const adjacentHours = [`${(hourInt - 1).toString().padStart(2, '0')}:00`, `${(hourInt + 1).toString().padStart(2, '0')}:00`];
+             
+             const adjacentNearbyOrSameApps = dayAppointments.filter(app => {
+                if (!adjacentHours.includes(app.timeSlot)) return false;
+                const appClinic = app.clinicId as any;
+                if (!appClinic?.clusterId) return false;
+                const appClusterId = appClinic.clusterId.toString();
+                return appClusterId === targetCluster._id.toString() || nearbyClusterIds.includes(appClusterId);
+             });
+
+             const hasFeasibleNearbyTech = adjacentNearbyOrSameApps.some(app => 
+                app.employeeId && feasibleTechIds.has(app.employeeId.toString())
+             );
+
+             const isBookedInNearby = nearbyClusterAppointments.some(app => app.timeSlot === hour);
+             
+             if (hasFeasibleNearbyTech && !isBookedInNearby) {
+               isNearby = true;
+             }
+          } else {
+             reason = 'No technician can reach this location';
           }
         }
       } else {
@@ -254,13 +383,15 @@ export class SchedulingEngineService {
         const bookedCount = dayAppointments.filter(app => app.timeSlot === hour).length;
         available = bookedCount < technicians.length;
         remainingCount = Math.max(0, technicians.length - bookedCount);
+        if (!available) reason = 'Fully booked';
       }
       
       slots.push({
         time: hour,
         available: available,
         remaining: remainingCount,
-        reason: !available ? (targetCluster ? 'No technician can reach this location' : 'Fully booked') : undefined
+        reason,
+        isNearby
       });
     }
 

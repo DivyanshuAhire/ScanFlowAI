@@ -10,18 +10,21 @@ import {
   Bell,
   User,
   LogOut,
-  Loader2
+  Loader2,
+  Trash2
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import axios from 'axios';
+import { toast } from 'sonner';
 import { useUser } from '@/context/UserContext';
 import { useClinicAppointments } from '@/hooks/useClinicAppointments';
 import { cn } from '@/lib/utils';
 import { format, isAfter, isBefore, startOfDay } from 'date-fns';
 import { CreateAppointmentModal } from '@/components/modals/CreateAppointmentModal';
 
-const AppointmentCard = ({ app }: any) => (
-  <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+const AppointmentCard = ({ app, onDelete }: any) => (
+  <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between group">
     <div className="flex gap-4">
       <div className="w-12 h-12 bg-blue-50 rounded-lg flex flex-col items-center justify-center text-blue-600">
         <span className="text-[10px] font-bold uppercase">{format(new Date(app.appointmentDate), 'MMM')}</span>
@@ -35,13 +38,20 @@ const AppointmentCard = ({ app }: any) => (
         </div>
       </div>
     </div>
-    <div className="text-right">
+    <div className="flex items-center gap-3">
       <span className={cn(
         "px-3 py-1 rounded-full text-xs font-bold",
         app.status === 'ASSIGNED' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'
       )}>
         {app.status}
       </span>
+      <button 
+        onClick={() => onDelete(app._id)}
+        className="p-1.5 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors opacity-0 group-hover:opacity-100"
+        title="Delete Appointment"
+      >
+        <Trash2 className="w-4 h-4" />
+      </button>
     </div>
   </div>
 );
@@ -68,6 +78,17 @@ export default function ClinicDashboard() {
 
     setLoading(appointmentsLoading);
   }, [user, authLoading, appointmentsLoading, router]);
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this appointment?')) return;
+    try {
+      await axios.delete(`/api/appointments/${id}`);
+      toast.success('Appointment deleted');
+      fetchAppointments();
+    } catch (error: any) {
+      toast.error(error.response?.data?.error || 'Failed to delete appointment');
+    }
+  };
 
   if (authLoading || (loading && appointments.length === 0)) {
     return (
@@ -177,7 +198,7 @@ export default function ClinicDashboard() {
               ) : (
                 <div className="space-y-4">
                   {upcoming.map((app, i) => (
-                    <AppointmentCard key={i} app={app} />
+                    <AppointmentCard key={i} app={app} onDelete={handleDelete} />
                   ))}
                 </div>
               )}
@@ -205,6 +226,7 @@ export default function ClinicDashboard() {
                         <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Date</th>
                         <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Scan Type</th>
                         <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Status</th>
+                        <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase text-right">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -219,6 +241,15 @@ export default function ClinicDashboard() {
                             )}>
                               {row.status === 'COMPLETED' && <CheckCircle className="w-3 h-3" />} {row.status}
                             </span>
+                          </td>
+                          <td className="px-4 py-3 text-sm text-right">
+                            <button 
+                              onClick={() => handleDelete(row._id)}
+                              className="p-1.5 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors"
+                              title="Delete Appointment"
+                            >
+                              <Trash2 className="w-4 h-4 inline" />
+                            </button>
                           </td>
                         </tr>
                       ))}
