@@ -3,21 +3,18 @@ import mongoose, { Schema, Document, Model } from 'mongoose';
 export interface IClinic extends Document {
   name: string;
   companyId: mongoose.Types.ObjectId;
-  clusterId?: mongoose.Types.ObjectId;
-  routeId?: mongoose.Types.ObjectId;
+  cluster_id?: mongoose.Types.ObjectId;
+  route_id?: mongoose.Types.ObjectId;
   address: string;
-  location: {
-    lat: number;
-    lng: number;
-    area: string;
-  };
+  lat: number;
+  lng: number;
   contactPerson: string;
   phoneNumber: string;
   email: string;
   workingHours: {
-    open: string; // HH:mm
-    close: string; // HH:mm
-    holidays: string[]; // ['Monday', 'Sunday']
+    open: string;
+    close: string;
+    holidays: string[];
   };
   isDeleted: boolean;
   createdAt: Date;
@@ -28,14 +25,11 @@ const ClinicSchema: Schema = new Schema(
   {
     name: { type: String, required: true },
     companyId: { type: Schema.Types.ObjectId, ref: 'Company', required: true, index: true },
-    clusterId: { type: Schema.Types.ObjectId, ref: 'Cluster' },
-    routeId: { type: Schema.Types.ObjectId, ref: 'Route' },
+    cluster_id: { type: Schema.Types.ObjectId, ref: 'Cluster' },
+    route_id: { type: Schema.Types.ObjectId, ref: 'Route' },
     address: { type: String, required: true },
-    location: {
-      lat: { type: Number, required: true },
-      lng: { type: Number, required: true },
-      area: { type: String, required: true },
-    },
+    lat: { type: Number, required: true },
+    lng: { type: Number, required: true },
     contactPerson: { type: String, required: true },
     phoneNumber: { type: String, required: true },
     email: { type: String, required: true },
@@ -49,6 +43,8 @@ const ClinicSchema: Schema = new Schema(
   { timestamps: true }
 );
 
-const Clinic: Model<IClinic> = mongoose.models.Clinic || mongoose.model<IClinic>('Clinic', ClinicSchema);
-
+if (mongoose.models.Clinic) {
+  delete mongoose.models.Clinic;
+}
+const Clinic: Model<IClinic> = mongoose.model<IClinic>('Clinic', ClinicSchema);
 export default Clinic;

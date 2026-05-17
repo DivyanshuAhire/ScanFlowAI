@@ -4,12 +4,12 @@ import Clinic from '@/models/Clinic';
 
 export async function PUT(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     await dbConnect();
     const body = await req.json();
-    const { id } = params;
+    const { id } = await params;
 
     const updatedClinic = await Clinic.findByIdAndUpdate(
       id,
@@ -29,11 +29,11 @@ export async function PUT(
 
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     await dbConnect();
-    const { id } = params;
+    const { id } = await params;
 
     const deletedClinic = await Clinic.findByIdAndDelete(id);
 

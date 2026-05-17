@@ -9,44 +9,42 @@ import {
   Mail,
   Loader2,
   Clock,
-  Layers,
   Trash2
 } from 'lucide-react';
 import axios from 'axios';
 import { toast } from 'sonner';
+import dynamic from 'next/dynamic';
+
+const DynamicMapPicker = dynamic(() => import('@/components/MapPicker'), { ssr: false, loading: () => <div className="h-[300px] bg-slate-100 rounded-xl flex items-center justify-center text-slate-500">Loading Map...</div> });
 
 export const EditClinicModal = ({ isOpen, onClose, companyId, clinic, onSuccess }: any) => {
   const [loading, setLoading] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
-  const [clusters, setClusters] = useState<any[]>([]);
   const [formData, setFormData] = useState({
     name: '',
     address: '',
-    clusterId: '',
     contactPerson: '',
     phoneNumber: '',
     email: '',
-    location: { area: '', lat: 19.0760, lng: 72.8777 },
+    lat: 19.0760,
+    lng: 72.8777,
     workingHours: { open: '09:00', close: '20:00', holidays: ['Sunday'] }
   });
 
   useEffect(() => {
-    if (isOpen && companyId) {
-      axios.get(`/api/clusters?companyId=${companyId}`).then(res => setClusters(res.data));
-    }
     if (isOpen && clinic) {
       setFormData({
         name: clinic.name || '',
         address: clinic.address || '',
-        clusterId: clinic.clusterId?._id || clinic.clusterId || '',
         contactPerson: clinic.contactPerson || '',
         phoneNumber: clinic.phoneNumber || '',
         email: clinic.email || '',
-        location: clinic.location || { area: '', lat: 19.0760, lng: 72.8777 },
+        lat: clinic.lat || 19.0760,
+        lng: clinic.lng || 72.8777,
         workingHours: clinic.workingHours || { open: '09:00', close: '20:00', holidays: ['Sunday'] }
       });
     }
-  }, [isOpen, companyId, clinic]);
+  }, [isOpen, clinic]);
 
   if (!isOpen) return null;
 
@@ -84,7 +82,10 @@ export const EditClinicModal = ({ isOpen, onClose, companyId, clinic, onSuccess 
     <div className="fixed inset-0 z-[100] bg-slate-900/50 backdrop-blur-sm p-4 flex justify-center items-center">
       <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200 my-auto max-h-[90vh] flex flex-col">
         <div className="p-6 border-b border-slate-100 flex items-center justify-between shrink-0">
-          <h3 className="text-xl font-bold text-slate-900">Edit Diagnostic Clinic</h3>
+          <div>
+            <h3 className="text-xl font-bold text-slate-900">Edit Diagnostic Clinic</h3>
+            <p className="text-sm text-slate-500">Location updates will regenerate auto-cluster</p>
+          </div>
           <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
             <X className="w-5 h-5 text-slate-500" />
           </button>
@@ -101,36 +102,6 @@ export const EditClinicModal = ({ isOpen, onClose, companyId, clinic, onSuccess 
                   required
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none font-medium"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-bold text-slate-700">Assigned Cluster</label>
-              <div className="relative">
-                <Layers className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <select 
-                  required
-                  value={formData.clusterId}
-                  onChange={(e) => setFormData({ ...formData, clusterId: e.target.value })}
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none appearance-none font-medium"
-                >
-                  <option value="">Select Cluster</option>
-                  {clusters.map(c => <option key={c._id} value={c._id}>{c.name}</option>)}
-                </select>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-bold text-slate-700">Area / Locality</label>
-              <div className="relative">
-                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input 
-                  type="text" 
-                  required
-                  value={formData.location.area}
-                  onChange={(e) => setFormData({ ...formData, location: { ...formData.location, area: e.target.value } })}
                   className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none font-medium"
                 />
               </div>
@@ -188,6 +159,16 @@ export const EditClinicModal = ({ isOpen, onClose, companyId, clinic, onSuccess 
               onChange={(e) => setFormData({ ...formData, address: e.target.value })}
               className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none font-medium resize-none"
             />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-bold text-slate-700 flex justify-between">
+              <span>Map Location</span>
+              <span className="text-blue-500 font-normal">
+                Lat: {formData.lat.toFixed(4)}, Lng: {formData.lng.toFixed(4)}
+              </span>
+            </label>
+            <DynamicMapPicker onLocationSelect={(lat, lng) => setFormData({...formData, lat, lng})} />
           </div>
 
           <div className="grid grid-cols-2 gap-4">

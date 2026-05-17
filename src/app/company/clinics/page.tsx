@@ -130,8 +130,8 @@ export default function ClinicsPage() {
                 </div>
                 
                 <h3 className="text-lg font-bold text-slate-900 mb-1">{clinic.name}</h3>
-                <p className="text-sm text-slate-500 hidden md:flex items-center gap-1.5 mb-4">
-                  <MapPin className="w-3.5 h-3.5" /> {clinic.location.area}
+                <p className="text-sm text-slate-500 hidden md:flex items-center gap-1.5 mb-4 truncate">
+                  <MapPin className="w-3.5 h-3.5 shrink-0" /> <span className="truncate">{clinic.address}</span>
                 </p>
 
                 <div className="space-y-2.5 pt-4 border-t border-slate-100 hidden md:block">
@@ -146,7 +146,7 @@ export default function ClinicsPage() {
                 <div className="mt-6 hidden md:flex items-center justify-between">
                   <span className="text-[10px] font-bold uppercase text-slate-400">Assigned Cluster</span>
                   <span className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded text-[10px] font-bold">
-                    {clinic.clusterId?.name || 'Unassigned'}
+                    {clinic.cluster_id?.name || 'Unassigned'}
                   </span>
                 </div>
               </div>

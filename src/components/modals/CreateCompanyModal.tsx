@@ -13,6 +13,16 @@ import {
 } from 'lucide-react';
 import axios from 'axios';
 import { toast } from 'sonner';
+import dynamic from 'next/dynamic';
+
+const DynamicMapPicker = dynamic(() => import('@/components/MapPicker'), {
+  ssr: false,
+  loading: () => (
+    <div className="h-[300px] w-full flex items-center justify-center bg-slate-100 rounded-2xl border border-slate-200 animate-pulse">
+      <span className="text-slate-400 font-bold text-sm">Loading Map Picker...</span>
+    </div>
+  )
+});
 
 export const CreateCompanyModal = ({ isOpen, onClose, onSuccess }: any) => {
   const [loading, setLoading] = useState(false);
@@ -24,7 +34,9 @@ export const CreateCompanyModal = ({ isOpen, onClose, onSuccess }: any) => {
     adminName: '',
     adminEmail: '',
     adminPassword: '',
-    subscriptionPlan: 'PREMIUM'
+    subscriptionPlan: 'PREMIUM',
+    lat: 19.0760,
+    lng: 72.8777
   });
 
   if (!isOpen) return null;
@@ -40,7 +52,11 @@ export const CreateCompanyModal = ({ isOpen, onClose, onSuccess }: any) => {
         email: formData.companyEmail,
         phoneNumber: formData.companyPhone,
         address: formData.companyAddress,
-        subscriptionPlan: formData.subscriptionPlan
+        subscriptionPlan: formData.subscriptionPlan,
+        hqLocation: {
+          lat: formData.lat,
+          lng: formData.lng
+        }
       });
 
       // 2. Create Admin User
@@ -52,7 +68,7 @@ export const CreateCompanyModal = ({ isOpen, onClose, onSuccess }: any) => {
         companyId: companyRes.data._id
       });
 
-      toast.success('Company and Admin account created successfully');
+      toast.success('Company, HQ Location, and Admin account created successfully');
       onSuccess();
       onClose();
     } catch (err: any) {
@@ -117,6 +133,13 @@ export const CreateCompanyModal = ({ isOpen, onClose, onSuccess }: any) => {
               onChange={(e) => setFormData({ ...formData, companyAddress: e.target.value })}
               className="input-premium min-h-[80px] resize-none"
             />
+            
+            <div className="space-y-2 pt-2">
+              <label className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 mb-1">
+                <MapPin className="w-3.5 h-3.5" /> HQ Location (Search & Drop Pin)
+              </label>
+              <DynamicMapPicker onLocationSelect={(lat, lng) => setFormData(prev => ({ ...prev, lat, lng }))} />
+            </div>
           </div>
 
           <div className="space-y-4 pt-4 border-t border-slate-100">

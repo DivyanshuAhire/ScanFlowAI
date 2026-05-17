@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import { Clinic } from '@/models';
+import { autoClusterEngine } from '@/services/autoClusterEngine';
+import { routeGraphEngine } from '@/services/routeGraphEngine';
 
 export async function GET(req: Request) {
   try {
@@ -13,7 +15,7 @@ export async function GET(req: Request) {
     }
 
     const clinics = await Clinic.find({ companyId, isDeleted: false })
-      .populate('clusterId', 'name')
+      .populate('cluster_id', 'name')
       .sort({ name: 1 });
 
     return NextResponse.json(clinics);
@@ -30,7 +32,11 @@ export async function POST(req: Request) {
     // 1. Create Clinic
     const clinic = await Clinic.create(data);
 
-    // 2. Create Clinic User Account
+    // 2. Trigger Auto Spatial Intelligence Engines
+    await autoClusterEngine.processNewClinic(clinic._id.toString(), clinic.companyId.toString());
+    await routeGraphEngine.regenerateGraph(clinic.companyId.toString());
+
+    // 3. Create Clinic User Account
     const { User, UserRole } = await import('@/models');
     const bcrypt = await import('bcryptjs');
     
@@ -45,7 +51,10 @@ export async function POST(req: Request) {
       isVerified: true
     });
 
-    return NextResponse.json(clinic, { status: 201 });
+    // Refresh clinic data to get cluster_id
+    const updatedClinic = await Clinic.findById(clinic._id);
+
+    return NextResponse.json(updatedClinic, { status: 201 });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

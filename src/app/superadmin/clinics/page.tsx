@@ -112,14 +112,14 @@ export default function SuperAdminClinics() {
                     <p className="text-xs font-bold text-slate-400 flex items-center gap-2">
                       <Building2 className="w-3.5 h-3.5" /> {clinic.companyId?.name || 'Unknown Company'}
                     </p>
-                    <p className="text-xs font-bold text-slate-400 flex items-center gap-2">
-                      <MapPin className="w-3.5 h-3.5" /> {clinic.location?.area || 'No Area'}
+                    <p className="text-xs font-bold text-slate-400 flex items-center gap-2 truncate">
+                      <MapPin className="w-3.5 h-3.5 shrink-0" /> <span className="truncate">{clinic.address || 'No Area'}</span>
                     </p>
                   </div>
 
                   <div className="mt-6 flex items-center justify-between">
                     <span className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded text-[10px] font-bold">
-                      {clinic.clusterId?.name || 'Unassigned Cluster'}
+                      {clinic.cluster_id?.name || 'Unassigned Cluster'}
                     </span>
                     <div className="flex items-center gap-1 text-emerald-600 text-[10px] font-black uppercase">
                       <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></div>

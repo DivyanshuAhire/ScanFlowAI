@@ -2,14 +2,12 @@ import mongoose, { Schema, Document, Model } from 'mongoose';
 
 export interface ICluster extends Document {
   name: string;
+  center_lat: number;
+  center_lng: number;
+  parent_cluster?: mongoose.Types.ObjectId;
+  type: string; // PRIMARY, SUBCLUSTER, SHARED
+  route_id?: mongoose.Types.ObjectId;
   companyId: mongoose.Types.ObjectId;
-  routeGroupIds: mongoose.Types.ObjectId[];
-  distanceFromHQ: number; // in KM
-  location?: {
-    lat: number;
-    lng: number;
-  };
-  visualAngle?: number;
   isDeleted: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -17,21 +15,25 @@ export interface ICluster extends Document {
 
 const ClusterSchema: Schema = new Schema(
   {
-    name: { type: String, required: true },
+    name: { type: String, default: 'Auto Cluster' },
+    center_lat: { type: Number, required: true },
+    center_lng: { type: Number, required: true },
+    parent_cluster: { type: Schema.Types.ObjectId, ref: 'Cluster' },
+    type: { type: String, enum: ['PRIMARY', 'SUBCLUSTER', 'SHARED'], default: 'PRIMARY' },
+    route_id: { type: Schema.Types.ObjectId, ref: 'Route' },
     companyId: { type: Schema.Types.ObjectId, ref: 'Company', required: true, index: true },
-    routeGroupIds: [{ type: Schema.Types.ObjectId, ref: 'Route' }],
-    distanceFromHQ: { type: Number, default: 0 },
-    location: {
-      lat: { type: Number },
-      lng: { type: Number },
-    },
-    visualAngle: { type: Number },
     isDeleted: { type: Boolean, default: false },
   },
   { timestamps: true }
 );
 
-// Handle model compilation error in Next.js hot-reloading
+// Auto-generate name before save if not modified specifically
+ClusterSchema.pre('save', function() {
+  if (this.isNew && this.name === 'Auto Cluster') {
+    this.name = `Cluster ${this._id.toString().substring(18).toUpperCase()}`;
+  }
+});
+
 if (mongoose.models.Cluster) {
   delete mongoose.models.Cluster;
 }

@@ -1,10 +1,8 @@
 import mongoose, { Schema, Document, Model } from 'mongoose';
 
 export interface IRoute extends Document {
-  name: string;
+  root_cluster?: mongoose.Types.ObjectId;
   companyId: mongoose.Types.ObjectId;
-  clusterIds?: mongoose.Types.ObjectId[];
-  description?: string;
   isDeleted: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -12,15 +10,17 @@ export interface IRoute extends Document {
 
 const RouteSchema: Schema = new Schema(
   {
-    name: { type: String, required: true },
+    root_cluster: { type: Schema.Types.ObjectId, ref: 'Cluster' },
     companyId: { type: Schema.Types.ObjectId, ref: 'Company', required: true, index: true },
-    clusterIds: [{ type: Schema.Types.ObjectId, ref: 'Cluster' }],
-    description: { type: String },
     isDeleted: { type: Boolean, default: false },
   },
   { timestamps: true }
 );
 
-const Route: Model<IRoute> = mongoose.models.Route || mongoose.model<IRoute>('Route', RouteSchema);
+if (mongoose.models.Route) {
+  delete mongoose.models.Route;
+}
+
+const Route: Model<IRoute> = mongoose.model<IRoute>('Route', RouteSchema);
 
 export default Route;

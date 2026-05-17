@@ -7,7 +7,7 @@ export async function GET() {
     await dbConnect();
     const clinics = await Clinic.find()
       .populate('companyId', 'name email')
-      .populate('clusterId', 'name')
+      .populate('cluster_id', 'name')
       .sort({ createdAt: -1 });
     
     return NextResponse.json(clinics);
