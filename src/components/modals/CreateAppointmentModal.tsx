@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   X, 
   Calendar, 
@@ -8,7 +8,8 @@ import {
   Hospital, 
   Activity,
   Loader2,
-  AlertCircle
+  AlertCircle,
+  MapPin
 } from 'lucide-react';
 import axios from 'axios';
 import { toast } from 'sonner';
@@ -29,6 +30,34 @@ export const CreateAppointmentModal = ({ isOpen, onClose, companyId, clinicId, o
     notes: ''
   });
   const [showSlots, setShowSlots] = useState(false);
+
+  // Clinic autosuggest states & memos
+  const [clinicSearch, setClinicSearch] = useState('');
+  const [showAutosuggest, setShowAutosuggest] = useState(false);
+
+  const filteredClinics = useMemo(() => {
+    const q = clinicSearch.toLowerCase();
+    return clinics.filter(c => 
+      c.name.toLowerCase().includes(q) || 
+      (c.location?.area || '').toLowerCase().includes(q)
+    );
+  }, [clinics, clinicSearch]);
+
+  const selectedClinic = useMemo(() => {
+    return clinics.find(c => c._id === formData.clinicId);
+  }, [clinics, formData.clinicId]);
+
+  // Sync clinic search text on selected clinic change
+  useEffect(() => {
+    if (formData.clinicId && clinics.length > 0) {
+      const selected = clinics.find(c => c._id === formData.clinicId);
+      if (selected) {
+        setClinicSearch(`${selected.name} (${selected.location?.area || ''})`);
+      }
+    } else if (!formData.clinicId) {
+      setClinicSearch('');
+    }
+  }, [formData.clinicId, clinics]);
 
   const fetchSlots = async (date: string) => {
     if (!companyId || !formData.clinicId) return;
@@ -137,15 +166,54 @@ export const CreateAppointmentModal = ({ isOpen, onClose, companyId, clinicId, o
                 <label className="text-sm font-bold text-slate-700">Select Clinic</label>
                 <div className="relative">
                   <Hospital className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                  <select 
+                  <input
+                    type="text"
                     required
-                    value={formData.clinicId}
-                    onChange={(e) => setFormData({ ...formData, clinicId: e.target.value })}
-                    className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none appearance-none font-medium"
-                  >
-                    <option value="">Choose a clinic</option>
-                    {clinics.map(c => <option key={c._id} value={c._id}>{c.name} ({c.location.area})</option>)}
-                  </select>
+                    value={clinicSearch}
+                    placeholder="Search & select clinic..."
+                    onFocus={() => {
+                      setShowAutosuggest(true);
+                      setClinicSearch('');
+                    }}
+                    onChange={(e) => {
+                      setClinicSearch(e.target.value);
+                      setShowAutosuggest(true);
+                    }}
+                    onBlur={() => {
+                      // Small timeout to let clicks on option elements register
+                      setTimeout(() => setShowAutosuggest(false), 200);
+                    }}
+                    className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none font-medium text-slate-800 placeholder-slate-400 transition-all"
+                  />
+                  {showAutosuggest && (
+                    <div className="absolute left-0 right-0 mt-1.5 max-h-60 overflow-y-auto bg-white border border-slate-200 rounded-2xl shadow-xl z-[150] divide-y divide-slate-50">
+                      {filteredClinics.length === 0 ? (
+                        <div className="p-4 text-xs font-medium text-slate-400 italic text-center">
+                          No clinics match "{clinicSearch}"
+                        </div>
+                      ) : (
+                        filteredClinics.map((c: any) => (
+                          <div
+                            key={c._id}
+                            onClick={() => {
+                              setFormData({ ...formData, clinicId: c._id });
+                              setClinicSearch(`${c.name} (${c.location?.area || ''})`);
+                              setShowAutosuggest(false);
+                            }}
+                            className={cn(
+                              "p-3 text-sm cursor-pointer hover:bg-slate-50 transition-colors flex flex-col gap-0.5 text-left",
+                              formData.clinicId === c._id ? "bg-blue-50 text-blue-700 font-bold" : "text-slate-700"
+                            )}
+                          >
+                            <span className="font-bold text-slate-900 text-sm">{c.name}</span>
+                            <span className="text-xs text-slate-500 flex items-center gap-1">
+                              <MapPin className="w-3.5 h-3.5 text-slate-400" /> {c.location?.area || 'No location'}
+                            </span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             )}

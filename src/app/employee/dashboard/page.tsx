@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { 
   Calendar, 
   MapPin, 
@@ -25,6 +25,14 @@ export default function EmployeeDashboard() {
   const router = useRouter();
   const { user, logout } = useUser();
   const { appointments, loading, setAppointments } = useEmployeeAppointments(user?.employeeId || null);
+
+  const todayAppointments = useMemo(() => {
+    const todayStr = format(new Date(), 'yyyy-MM-dd');
+    return appointments.filter(app => {
+      if (!app.appointmentDate) return false;
+      return format(new Date(app.appointmentDate), 'yyyy-MM-dd') === todayStr;
+    });
+  }, [appointments]);
 
   const handleLogout = () => {
     logout();
@@ -68,16 +76,16 @@ export default function EmployeeDashboard() {
               <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
               <p className="text-slate-500 text-sm">Fetching your scans...</p>
             </div>
-          ) : appointments.length === 0 ? (
+          ) : todayAppointments.length === 0 ? (
             <div className="py-20 text-center bg-slate-800/30 rounded-3xl border border-dashed border-slate-700">
               <CalendarDays className="w-10 h-10 text-slate-700 mx-auto mb-4" />
-              <p className="text-slate-400 font-bold">All clear for now!</p>
-              <p className="text-slate-500 text-sm mt-1">Check back later for new assignments.</p>
+              <p className="text-slate-400 font-bold">All clear for today!</p>
+              <p className="text-slate-500 text-sm mt-1">Check back tomorrow for new assignments.</p>
             </div>
           ) : (
-            appointments.map((app, i) => (
+            todayAppointments.map((app, i) => (
               <div key={app._id} className="relative pl-8 group">
-                {i !== appointments.length - 1 && (
+                {i !== todayAppointments.length - 1 && (
                   <div className="absolute left-[11px] top-8 bottom-[-24px] w-0.5 bg-slate-800"></div>
                 )}
                 <div className={cn(
@@ -130,7 +138,7 @@ export default function EmployeeDashboard() {
         <div className="w-full py-6 mt-8 border-t border-slate-800 flex flex-col items-center justify-center gap-1 text-center">
           <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Summary</p>
           <p className="text-sm font-bold text-slate-400">
-            Today's Total Appointments: <span className="text-emerald-500 text-base font-black ml-1">{appointments.length}</span>
+            Today's Total Appointments: <span className="text-emerald-500 text-base font-black ml-1">{todayAppointments.length}</span>
           </p>
         </div>
       </main>
