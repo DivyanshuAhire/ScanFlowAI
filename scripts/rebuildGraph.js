@@ -40,128 +40,78 @@ async function rebuild() {
     ]
   });
 
-  // 1. Connect Company HQ to closest cluster
-  if (company && company.hqLocation && company.hqLocation.lat && clusters.length > 0) {
-    let closestCluster = null;
-    let minHqDist = Infinity;
-    for (const c of clusters) {
-      const dist = calculateDistance(company.hqLocation.lat, company.hqLocation.lng, c.center_lat, c.center_lng);
-      if (dist < minHqDist) {
-        minHqDist = dist;
-        closestCluster = c;
-      }
-    }
-
-    if (closestCluster) {
-      let finalDistance = minHqDist;
-      let finalTravelTime = (minHqDist / 40) * 60;
-      let geometry = undefined;
-
-      try {
-        const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${company.hqLocation.lng},${company.hqLocation.lat};${closestCluster.center_lng},${closestCluster.center_lat}?overview=full&geometries=geojson`;
-        console.log(`Fetching road route: HQ -> ${closestCluster.name}...`);
-        const response = await fetch(osrmUrl);
-        if (response.ok) {
-          const result = await response.json();
-          if (result.routes && result.routes.length > 0) {
-            const route = result.routes[0];
-            finalDistance = route.distance / 1000;
-            finalTravelTime = route.duration / 60;
-            if (route.geometry && route.geometry.coordinates) {
-              geometry = route.geometry.coordinates.map((coord) => [coord[1], coord[0]]);
-            }
-            console.log(`✅ HQ Connected! Dist=${finalDistance.toFixed(2)}km, Time=${finalTravelTime.toFixed(1)}mins, Pts=${geometry ? geometry.length : 0}`);
-          }
-        }
-      } catch (apiErr) {
-        console.warn(`❌ HQ OSRM failed:`, apiErr);
-      }
-
-      try {
-        await mongoose.connection.db.collection('clusteredges').insertOne({
-          from_cluster: new mongoose.Types.ObjectId(companyId),
-          to_cluster: closestCluster._id,
-          distance: finalDistance,
-          travel_time: finalTravelTime,
-          geometry: geometry,
-          createdAt: new Date(),
-          updatedAt: new Date()
-        });
-        console.log(`Saved HQ Edge to DB.`);
-      } catch (err) {
-        console.error('Failed to save HQ edge:', err);
-      }
-    }
+  if (clusters.length === 0) {
+    console.log('No clusters found to route.');
+    await mongoose.connection.close();
+    return;
   }
 
-  // 2. Connect cluster-to-cluster mesh
-  for (let i = 0; i < clusters.length; i++) {
-    const c1 = clusters[i];
+  if (!company || !company.hqLocation || !company.hqLocation.lat) {
+    console.log('No company HQ location found.');
+    await mongoose.connection.close();
+    return;
+  }
+
+  const hqLat = company.hqLocation.lat;
+  const hqLng = company.hqLocation.lng;
+
+  // 1. Group clusters by Route corridor
+  const primaryClusters = clusters.filter(c => c.type === 'PRIMARY');
+  
+  for (const primary of primaryClusters) {
+    // Find all subclusters belonging to this primary cluster
+    const subclusters = clusters.filter(c => c.type === 'SUBCLUSTER' && c.parent_cluster?.toString() === primary._id.toString());
     
-    let distances = [];
-    for (let j = 0; j < clusters.length; j++) {
-      if (i === j) continue;
-      const c2 = clusters[j];
-      const dist = calculateDistance(c1.center_lat, c1.center_lng, c2.center_lat, c2.center_lng);
-      distances.push({ clusterId: c2._id, clusterLat: c2.center_lat, clusterLng: c2.center_lng, distance: dist });
+    // The "last cluster" of this corridor is the one geographically farthest from HQ
+    let lastCluster = primary;
+    let maxDist = calculateDistance(hqLat, hqLng, primary.center_lat, primary.center_lng);
+    
+    for (const sub of subclusters) {
+      const dist = calculateDistance(hqLat, hqLng, sub.center_lat, sub.center_lng);
+      if (dist > maxDist) {
+        maxDist = dist;
+        lastCluster = sub;
+      }
     }
 
-    distances.sort((a, b) => a.distance - b.distance);
-    
-    // Connect to nearest 2 clusters
-    const nearest = distances.slice(0, 2);
-    
-    for (const n of nearest) {
-      let finalDistance = n.distance;
-      let finalTravelTime = (n.distance / 40) * 60;
-      let geometry = undefined;
+    // Generate a single OSRM driving route from HQ directly to the center of the last cluster
+    let finalDistance = maxDist;
+    let finalTravelTime = (maxDist / 40) * 60; // 40 km/h avg speed fallback
+    let geometry = undefined;
 
-      try {
-        const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${c1.center_lng},${c1.center_lat};${n.clusterLng},${n.clusterLat}?overview=full&geometries=geojson`;
-        console.log(`Fetching road route: ${c1.name} -> Neighbor...`);
-        const response = await fetch(osrmUrl);
-        if (response.ok) {
-          const result = await response.json();
-          if (result.routes && result.routes.length > 0) {
-            const route = result.routes[0];
-            finalDistance = route.distance / 1000;
-            finalTravelTime = route.duration / 60;
-            
-            if (route.geometry && route.geometry.coordinates) {
-              geometry = route.geometry.coordinates.map((coord) => [coord[1], coord[0]]);
-            }
-            console.log(`✅ Road route found! Dist=${finalDistance.toFixed(2)}km, Time=${finalTravelTime.toFixed(1)}mins, Pts=${geometry ? geometry.length : 0}`);
+    try {
+      const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${hqLng},${hqLat};${lastCluster.center_lng},${lastCluster.center_lat}?overview=full&geometries=geojson`;
+      console.log(`Fetching road route: HQ -> Last Cluster (${lastCluster.name || 'End Node'})...`);
+      const response = await fetch(osrmUrl);
+      if (response.ok) {
+        const result = await response.json();
+        if (result.routes && result.routes.length > 0) {
+          const route = result.routes[0];
+          finalDistance = route.distance / 1000; // meters to km
+          finalTravelTime = route.duration / 60; // seconds to minutes
+          if (route.geometry && route.geometry.coordinates) {
+            geometry = route.geometry.coordinates.map((coord) => [coord[1], coord[0]]);
           }
+          console.log(`✅ HQ ➜ Last Cluster Connected! Dist=${finalDistance.toFixed(2)}km, Time=${finalTravelTime.toFixed(1)}mins, Pts=${geometry ? geometry.length : 0}`);
         }
-      } catch (apiErr) {
-        console.warn(`❌ OSRM failed:`, apiErr);
       }
+    } catch (apiErr) {
+      console.warn(`❌ HQ -> Last Cluster OSRM failed:`, apiErr);
+    }
 
-      const edgeId1 = c1._id.toString();
-      const edgeId2 = n.clusterId.toString();
-      const from_cluster = edgeId1 < edgeId2 ? new mongoose.Types.ObjectId(edgeId1) : new mongoose.Types.ObjectId(edgeId2);
-      const to_cluster = edgeId1 < edgeId2 ? new mongoose.Types.ObjectId(edgeId2) : new mongoose.Types.ObjectId(edgeId1);
-
-      try {
-        await mongoose.connection.db.collection('clusteredges').updateOne(
-          { from_cluster, to_cluster },
-          { 
-            $set: { 
-              distance: finalDistance, 
-              travel_time: finalTravelTime,
-              geometry: geometry,
-              updatedAt: new Date()
-            },
-            $setOnInsert: {
-              createdAt: new Date()
-            }
-          },
-          { upsert: true }
-        );
-        console.log(`Saved Edge to DB.`);
-      } catch (e) {
-        console.error('Error saving edge:', e);
-      }
+    try {
+      await mongoose.connection.db.collection('clusteredges').insertOne({
+        from_cluster: new mongoose.Types.ObjectId(companyId),
+        to_cluster: lastCluster._id,
+        distance: finalDistance,
+        travel_time: finalTravelTime,
+        geometry: geometry,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      });
+      console.log(`Saved Route Edge from HQ to ${lastCluster.name || 'End Cluster'} in DB.`);
+    } catch (err) {
+      console.error('Failed to save route edge:', err);
     }
   }
 
