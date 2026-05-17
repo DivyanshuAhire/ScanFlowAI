@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -10,10 +10,18 @@ import {
   TrendingUp, 
   Activity,
   AlertCircle,
-  Loader2
+  Loader2,
+  Calendar as CalendarIcon,
+  Clock,
+  User as UserIcon,
+  MapPin,
+  Hospital,
+  ChevronDown
 } from 'lucide-react';
 import { useUser } from '@/context/UserContext';
 import { useCompanyStats } from '@/hooks/useCompanyStats';
+import { useAppointments } from '@/hooks/useAppointments';
+import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { CreateAppointmentModal } from '@/components/modals/CreateAppointmentModal';
 
@@ -44,8 +52,74 @@ export default function CompanyDashboard() {
   const { user, loading: authLoading } = useUser();
   const router = useRouter();
   const { stats, loading: statsLoading } = useCompanyStats(user?.companyId || null);
+  const { appointments, loading: appointmentsLoading } = useAppointments(user?.companyId || null);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+
+  // History filters
+  const [historyDay, setHistoryDay] = useState('ALL');
+  const [historyMonth, setHistoryMonth] = useState('ALL');
+  const [historyClinic, setHistoryClinic] = useState('ALL');
+  const [historyEmployee, setHistoryEmployee] = useState('ALL');
+
+  // Extract unique filter choices dynamically
+  const historyClinics = useMemo(() => {
+    const clinicsMap = new Map();
+    appointments.forEach((app: any) => {
+      if (app.clinicId?._id) clinicsMap.set(app.clinicId._id, app.clinicId.name);
+    });
+    return Array.from(clinicsMap.entries()).map(([id, name]) => ({ id, name }));
+  }, [appointments]);
+
+  const historyEmployees = useMemo(() => {
+    const employeesMap = new Map();
+    appointments.forEach((app: any) => {
+      if (app.employeeId?._id) employeesMap.set(app.employeeId._id, app.employeeId.name);
+    });
+    return Array.from(employeesMap.entries()).map(([id, name]) => ({ id, name }));
+  }, [appointments]);
+
+  const historyMonths = useMemo(() => {
+    const monthsSet = new Set<string>();
+    appointments.forEach((app: any) => {
+      if (app.appointmentDate) {
+        monthsSet.add(format(new Date(app.appointmentDate), 'yyyy-MM'));
+      }
+    });
+    return Array.from(monthsSet).sort().reverse();
+  }, [appointments]);
+
+  const historyDays = useMemo(() => {
+    const daysSet = new Set<string>();
+    appointments.forEach((app: any) => {
+      if (app.appointmentDate) {
+        daysSet.add(format(new Date(app.appointmentDate), 'yyyy-MM-dd'));
+      }
+    });
+    return Array.from(daysSet).sort().reverse();
+  }, [appointments]);
+
+  const filteredHistoryAppointments = useMemo(() => {
+    let result = [...appointments];
+
+    if (historyDay !== 'ALL') {
+      result = result.filter(app => format(new Date(app.appointmentDate), 'yyyy-MM-dd') === historyDay);
+    }
+    if (historyMonth !== 'ALL') {
+      result = result.filter(app => format(new Date(app.appointmentDate), 'yyyy-MM') === historyMonth);
+    }
+    if (historyClinic !== 'ALL') {
+      result = result.filter(app => app.clinicId?._id === historyClinic);
+    }
+    if (historyEmployee !== 'ALL') {
+      result = result.filter(app => app.employeeId?._id === historyEmployee);
+    }
+
+    // Default: Sort latest appointments on top
+    result.sort((a, b) => new Date(b.appointmentDate).getTime() - new Date(a.appointmentDate).getTime());
+
+    return result;
+  }, [appointments, historyDay, historyMonth, historyClinic, historyEmployee]);
 
   const handleExport = () => {
     if (!stats) return;
@@ -174,17 +248,187 @@ export default function CompanyDashboard() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2 card-premium min-h-[400px]">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="font-bold text-slate-900 text-lg">Weekly Appointment Flow</h3>
-              <select className="bg-slate-50 border border-slate-200 rounded-md text-xs p-1">
-                <option>Last 7 Days</option>
-                <option>Last 30 Days</option>
-              </select>
+          <div className="lg:col-span-2 card-premium flex flex-col justify-between min-h-[500px]">
+            <div>
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h3 className="font-bold text-slate-900 text-lg">Appointment History</h3>
+                  <p className="text-xs text-slate-500 font-medium">Browse and search clinic fulfillment records</p>
+                </div>
+                <CalendarIcon className="w-5 h-5 text-slate-400" />
+              </div>
+
+              {/* Advanced Filter Grid */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6 bg-slate-50/50 p-3 rounded-xl border border-slate-100">
+                {/* Month Selector */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Month</label>
+                  <div className="relative flex items-center bg-white border border-slate-200 hover:border-slate-300 transition-colors rounded-lg overflow-hidden">
+                    <select
+                      value={historyMonth}
+                      onChange={(e) => {
+                        setHistoryMonth(e.target.value);
+                        setHistoryDay('ALL'); // Reset day if month changes
+                      }}
+                      className="pl-2 pr-7 py-1.5 text-xs font-bold text-slate-700 bg-transparent focus:outline-none appearance-none cursor-pointer w-full focus:text-blue-600"
+                    >
+                      <option value="ALL">All Months</option>
+                      {historyMonths.map(m => (
+                        <option key={m} value={m}>
+                          {format(new Date(`${m}-01`), 'MMMM yyyy')}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 pointer-events-none" />
+                  </div>
+                </div>
+
+                {/* Day Selector */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Day</label>
+                  <div className="relative flex items-center bg-white border border-slate-200 hover:border-slate-300 transition-colors rounded-lg overflow-hidden">
+                    <select
+                      value={historyDay}
+                      onChange={(e) => {
+                        setHistoryDay(e.target.value);
+                        if (e.target.value !== 'ALL') {
+                          // Sync month to selected day
+                          setHistoryMonth(e.target.value.substring(0, 7));
+                        }
+                      }}
+                      className="pl-2 pr-7 py-1.5 text-xs font-bold text-slate-700 bg-transparent focus:outline-none appearance-none cursor-pointer w-full focus:text-blue-600"
+                    >
+                      <option value="ALL">All Days</option>
+                      {historyDays
+                        .filter(d => historyMonth === 'ALL' || d.startsWith(historyMonth))
+                        .map(d => (
+                          <option key={d} value={d}>
+                            {format(new Date(d), 'dd MMM yyyy')}
+                          </option>
+                        ))}
+                    </select>
+                    <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 pointer-events-none" />
+                  </div>
+                </div>
+
+                {/* Clinic Selector */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Clinic</label>
+                  <div className="relative flex items-center bg-white border border-slate-200 hover:border-slate-300 transition-colors rounded-lg overflow-hidden">
+                    <select
+                      value={historyClinic}
+                      onChange={(e) => setHistoryClinic(e.target.value)}
+                      className="pl-2 pr-7 py-1.5 text-xs font-bold text-slate-700 bg-transparent focus:outline-none appearance-none cursor-pointer w-full truncate focus:text-blue-600"
+                    >
+                      <option value="ALL">All Clinics</option>
+                      {historyClinics.map(c => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                    <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 pointer-events-none" />
+                  </div>
+                </div>
+
+                {/* Employee Selector */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Employee</label>
+                  <div className="relative flex items-center bg-white border border-slate-200 hover:border-slate-300 transition-colors rounded-lg overflow-hidden">
+                    <select
+                      value={historyEmployee}
+                      onChange={(e) => setHistoryEmployee(e.target.value)}
+                      className="pl-2 pr-7 py-1.5 text-xs font-bold text-slate-700 bg-transparent focus:outline-none appearance-none cursor-pointer w-full truncate focus:text-blue-600"
+                    >
+                      <option value="ALL">All Staff</option>
+                      {historyEmployees.map(emp => (
+                        <option key={emp.id} value={emp.id}>{emp.name}</option>
+                      ))}
+                    </select>
+                    <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 pointer-events-none" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Feed List */}
+              <div className="max-h-[380px] overflow-y-auto space-y-3 pr-1.5 no-scrollbar">
+                {appointmentsLoading ? (
+                  <div className="flex flex-col items-center justify-center py-16 gap-3">
+                    <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
+                    <p className="text-slate-400 text-xs font-medium">Loading history...</p>
+                  </div>
+                ) : filteredHistoryAppointments.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-16 text-center">
+                    <CalendarIcon className="w-10 h-10 text-slate-200 mb-3" />
+                    <p className="text-slate-500 font-bold text-sm">No matching history records</p>
+                    <p className="text-slate-400 text-xs mt-1">Try resetting the dropdown filters</p>
+                  </div>
+                ) : (
+                  filteredHistoryAppointments.map((app: any) => {
+                    const statusColors: any = {
+                      ASSIGNED: 'bg-blue-50 text-blue-700 border-blue-100',
+                      COMPLETED: 'bg-emerald-50 text-emerald-700 border-emerald-100',
+                      IN_PROGRESS: 'bg-indigo-50 text-indigo-700 border-indigo-100',
+                      REQUESTED: 'bg-amber-50 text-amber-700 border-amber-100',
+                      CANCELLED: 'bg-rose-50 text-rose-700 border-rose-100',
+                    };
+                    return (
+                      <div 
+                        key={app._id} 
+                        className="p-3 bg-white border border-slate-100 hover:border-slate-200 rounded-xl transition-all shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3 group"
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className="w-9 h-9 rounded-xl bg-slate-50 text-slate-600 flex items-center justify-center shrink-0 border border-slate-100">
+                            <Hospital className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <h4 className="font-bold text-slate-900 text-sm leading-snug">{app.clinicId?.name}</h4>
+                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-[11px] text-slate-500">
+                              <span className="flex items-center gap-1">
+                                <MapPin className="w-3 h-3 text-slate-400" /> {app.clinicId?.location?.area}
+                              </span>
+                              <span className="w-1 h-1 bg-slate-300 rounded-full hidden md:inline"></span>
+                              <span className="flex items-center gap-1 font-semibold text-blue-600">
+                                <CalendarIcon className="w-3 h-3" /> {format(new Date(app.appointmentDate), 'dd MMM')}
+                              </span>
+                              <span className="flex items-center gap-1 font-semibold text-violet-600">
+                                <Clock className="w-3 h-3" /> {app.timeSlot}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between md:justify-end gap-3 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-slate-50">
+                          <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center text-[10px] font-black uppercase">
+                              {(app.employeeId?.name || '?').split(' ').map((n: string) => n[0]).join('').slice(0, 2)}
+                            </div>
+                            <span className="text-xs text-slate-600 font-medium">
+                              {app.employeeId?.name || 'Unassigned'}
+                            </span>
+                          </div>
+                          <span className={cn("px-2 py-0.5 rounded-full text-[10px] font-bold border", statusColors[app.status] || 'bg-slate-50 text-slate-600 border-slate-100')}>
+                            {app.status.replace('_', ' ')}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
             </div>
-            {/* Chart Placeholder */}
-            <div className="w-full h-64 bg-slate-50 rounded-lg flex items-center justify-center border border-dashed border-slate-300">
-              <p className="text-slate-400 text-sm italic">Analytics visualization will appear as data matures.</p>
+
+            <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-400 font-medium">
+              <span>Showing {filteredHistoryAppointments.length} matching logs</span>
+              <button 
+                onClick={() => {
+                  setHistoryDay('ALL');
+                  setHistoryMonth('ALL');
+                  setHistoryClinic('ALL');
+                  setHistoryEmployee('ALL');
+                }}
+                className="text-blue-600 hover:text-blue-700 hover:underline font-bold"
+              >
+                Reset All Filters
+              </button>
             </div>
           </div>
 
