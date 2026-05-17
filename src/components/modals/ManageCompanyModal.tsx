@@ -11,17 +11,22 @@ import {
   User,
   Loader2,
   CheckCircle,
-  AlertCircle
+  AlertCircle,
+  Hospital,
+  MapPin,
+  Truck
 } from 'lucide-react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { useRouter } from 'next/navigation';
 
 export const ManageCompanyModal = ({ isOpen, onClose, company }: any) => {
+  const router = useRouter();
   const [admins, setAdmins] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [fetchLoading, setFetchLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'list' | 'add' | 'reset'>('list');
+  const [activeTab, setActiveTab] = useState<'list' | 'add' | 'reset' | 'resources'>('resources');
   const [selectedAdmin, setSelectedAdmin] = useState<any>(null);
 
   // New Admin Form
@@ -51,7 +56,7 @@ export const ManageCompanyModal = ({ isOpen, onClose, company }: any) => {
   useEffect(() => {
     if (isOpen && company) {
       fetchAdmins();
-      setActiveTab('list');
+      setActiveTab('resources');
     }
   }, [isOpen, company]);
 
@@ -108,6 +113,15 @@ export const ManageCompanyModal = ({ isOpen, onClose, company }: any) => {
 
         <div className="flex border-b border-slate-100">
           <button 
+            onClick={() => setActiveTab('resources')}
+            className={cn(
+              "flex-1 py-4 text-sm font-bold transition-all border-b-2",
+              activeTab === 'resources' ? "border-blue-600 text-blue-600 bg-blue-50/50" : "border-transparent text-slate-500 hover:text-slate-700"
+            )}
+          >
+            Company Resources
+          </button>
+          <button 
             onClick={() => setActiveTab('list')}
             className={cn(
               "flex-1 py-4 text-sm font-bold transition-all border-b-2",
@@ -127,7 +141,65 @@ export const ManageCompanyModal = ({ isOpen, onClose, company }: any) => {
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-6 bg-slate-50/50">
+          {activeTab === 'resources' && (
+            <div className="space-y-4">
+              <div 
+                onClick={() => {
+                  onClose();
+                  router.push(`/superadmin/clinics?companyId=${company._id}`);
+                }}
+                className="p-5 bg-white border border-slate-200 rounded-3xl flex items-center justify-between hover:border-blue-500 hover:shadow-lg transition-all cursor-pointer group"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
+                    <Hospital className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h4 className="font-extrabold text-slate-900 group-hover:text-blue-600 transition-colors">Clinics Directory</h4>
+                    <p className="text-xs text-slate-500 font-medium leading-relaxed mt-0.5">Manage and view all clinics registered under this partner.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div 
+                onClick={() => {
+                  onClose();
+                  router.push(`/superadmin/clusters?companyId=${company._id}`);
+                }}
+                className="p-5 bg-white border border-slate-200 rounded-3xl flex items-center justify-between hover:border-indigo-500 hover:shadow-lg transition-all cursor-pointer group"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
+                    <MapPin className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h4 className="font-extrabold text-slate-900 group-hover:text-indigo-600 transition-colors">Geospatial Clusters</h4>
+                    <p className="text-xs text-slate-500 font-medium leading-relaxed mt-0.5">Optimize angular layouts, node distances and coordinate offsets.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div 
+                onClick={() => {
+                  onClose();
+                  router.push(`/superadmin/routes?companyId=${company._id}`);
+                }}
+                className="p-5 bg-white border border-slate-200 rounded-3xl flex items-center justify-between hover:border-emerald-500 hover:shadow-lg transition-all cursor-pointer group"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
+                    <Truck className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h4 className="font-extrabold text-slate-900 group-hover:text-emerald-600 transition-colors">Route Optimization</h4>
+                    <p className="text-xs text-slate-500 font-medium leading-relaxed mt-0.5">Define active paths, sequence stops and verify operations.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {activeTab === 'list' && (
             <div className="space-y-4">
               {fetchLoading ? (

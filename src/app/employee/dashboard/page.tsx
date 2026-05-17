@@ -43,7 +43,7 @@ export default function EmployeeDashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 text-white pb-10">
+    <div className="min-h-screen bg-slate-900 text-white pb-[50vh]">
       <header className="p-6 flex items-center justify-between">
         <div>
           <p className="text-slate-400 text-sm font-medium">Hello, {user?.name || 'Technician'}</p>
@@ -55,21 +55,7 @@ export default function EmployeeDashboard() {
       </header>
 
       <main className="px-6 space-y-6">
-        <div className="bg-gradient-to-br from-indigo-600 to-blue-700 p-6 rounded-3xl relative overflow-hidden">
-          <div className="relative z-10">
-            <p className="text-blue-100 text-xs font-bold uppercase tracking-wider mb-2">Assigned Route</p>
-            <h3 className="text-xl font-bold mb-4">Assigned Operations Route</h3>
-            <div className="flex items-center gap-4">
-              <button className="flex-1 bg-white text-blue-600 py-3 rounded-xl font-bold flex items-center justify-center gap-2 text-sm shadow-xl">
-                <Navigation className="w-4 h-4" /> Start Route
-              </button>
-              <button className="w-12 h-12 bg-blue-500/30 backdrop-blur rounded-xl flex items-center justify-center">
-                <MessageCircle className="w-5 h-5" />
-              </button>
-            </div>
-          </div>
-          <div className="absolute -right-10 -bottom-10 w-40 h-40 bg-white/10 rounded-full blur-2xl"></div>
-        </div>
+
 
         <section className="space-y-4">
           <h4 className="text-lg font-bold text-slate-300 px-2 flex items-center justify-between">
@@ -95,20 +81,20 @@ export default function EmployeeDashboard() {
                   <div className="absolute left-[11px] top-8 bottom-[-24px] w-0.5 bg-slate-800"></div>
                 )}
                 <div className={cn(
-                  "absolute left-0 top-1.5 w-6 h-6 rounded-full border-4 border-slate-900 flex items-center justify-center",
-                  app.status === 'IN_PROGRESS' ? "bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]" : "bg-slate-700"
+                  "absolute left-0 top-1.5 w-6 h-6 rounded-full border-4 border-slate-900 flex items-center justify-center transition-colors",
+                  app.status === 'COMPLETED' ? "bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.4)]" : "bg-slate-700"
                 )}></div>
 
                 <div className={cn(
                   "p-5 rounded-3xl transition-all",
-                  app.status === 'IN_PROGRESS' ? "bg-slate-800 ring-2 ring-blue-500/50" : "bg-slate-800/50"
+                  app.status !== 'COMPLETED' ? "bg-slate-800 ring-1 ring-slate-700" : "bg-slate-800/40 opacity-75"
                 )}>
                   <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2 text-blue-400 font-bold text-sm">
+                    <div className="flex items-center gap-2 text-slate-400 font-bold text-sm">
                       <Clock className="w-4 h-4" /> {app.timeSlot}
                     </div>
-                    {app.status === 'IN_PROGRESS' && (
-                      <span className="bg-blue-500/10 text-blue-400 text-[10px] font-black px-2 py-1 rounded-full uppercase animate-pulse">Active</span>
+                    {app.status === 'COMPLETED' && (
+                      <span className="bg-emerald-500/10 text-emerald-400 text-[10px] font-black px-2 py-1 rounded-full uppercase">Completed</span>
                     )}
                   </div>
                   
@@ -122,18 +108,18 @@ export default function EmployeeDashboard() {
                       <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tighter">Scan Type</span>
                       <span className="text-xs font-bold text-slate-200">{app.scanType}</span>
                     </div>
-                    <button 
-                      onClick={() => {
-                        const nextStatus = app.status === 'IN_PROGRESS' ? 'COMPLETED' : 'IN_PROGRESS';
-                        updateStatus(app._id, nextStatus);
-                      }}
-                      className={cn(
-                        "px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all active:scale-95",
-                        app.status === 'IN_PROGRESS' ? "bg-emerald-600 text-white" : "bg-blue-600 text-white"
-                      )}
-                    >
-                      {app.status === 'IN_PROGRESS' ? 'Complete' : 'Check In'} <ChevronRight className="w-3 h-3" />
-                    </button>
+                    {app.status !== 'COMPLETED' ? (
+                      <button 
+                        onClick={() => updateStatus(app._id, 'COMPLETED')}
+                        className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center gap-2 transition-all active:scale-95 shadow-lg shadow-emerald-900/20"
+                      >
+                        Complete Scan <CheckCircle className="w-3.5 h-3.5" />
+                      </button>
+                    ) : (
+                      <div className="flex items-center gap-1.5 text-emerald-500 text-xs font-bold">
+                        <CheckCircle className="w-4 h-4" /> Completed
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -141,9 +127,12 @@ export default function EmployeeDashboard() {
           )}
         </section>
 
-        <button className="w-full py-5 bg-slate-800 text-slate-400 rounded-3xl font-bold border border-slate-700/50 flex items-center justify-center gap-2 hover:bg-slate-750 transition-all">
-          <CheckCircle className="w-5 h-5" /> Finish Day
-        </button>
+        <div className="w-full py-6 mt-8 border-t border-slate-800 flex flex-col items-center justify-center gap-1 text-center">
+          <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Summary</p>
+          <p className="text-sm font-bold text-slate-400">
+            Today's Total Appointments: <span className="text-emerald-500 text-base font-black ml-1">{appointments.length}</span>
+          </p>
+        </div>
       </main>
     </div>
   );

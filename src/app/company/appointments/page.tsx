@@ -50,9 +50,25 @@ export default function AppointmentsPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   
   // Optimization State
+  const next7Days = useMemo(() => {
+    const days = [];
+    let current = new Date();
+    while (days.length < 7) {
+      if (current.getDay() !== 0) { // Skip Sunday
+        days.push({
+          dateStr: current.toISOString().split('T')[0],
+          label: format(current, 'EEE, MMM dd')
+        });
+      }
+      current.setDate(current.getDate() + 1);
+    }
+    return days;
+  }, []);
+
   const [optimizeDate, setOptimizeDate] = useState(() => {
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
+    if (tomorrow.getDay() === 0) tomorrow.setDate(tomorrow.getDate() + 1);
     return tomorrow.toISOString().split('T')[0];
   });
   const [optimizing, setOptimizing] = useState(false);
@@ -75,7 +91,8 @@ export default function AppointmentsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [urgencyFilter, setUrgencyFilter] = useState('ALL');
-  const [sortConfig, setSortConfig] = useState({ key: 'appointmentDate', direction: 'desc' });
+  const [employeeFilter, setEmployeeFilter] = useState('ALL');
+  const [sortConfig, setSortConfig] = useState({ key: 'createdAt', direction: 'desc' });
 
   useEffect(() => {
     if (authLoading) return;
@@ -110,6 +127,18 @@ export default function AppointmentsPage() {
     }
   };
 
+  const uniqueEmployees = useMemo(() => {
+    const employeesMap = new Map();
+    appointments.forEach((app: any) => {
+      if (app.employeeId && app.employeeId._id) {
+        employeesMap.set(app.employeeId._id, app.employeeId.name);
+      }
+    });
+    return Array.from(employeesMap.entries())
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [appointments]);
+
   const filteredAppointments = useMemo(() => {
     let result = [...appointments];
 
@@ -122,6 +151,14 @@ export default function AppointmentsPage() {
         app.employeeId?.name?.toLowerCase().includes(q) ||
         app.scanType?.toLowerCase().includes(q)
       );
+    }
+
+    // Employee Filter
+    if (employeeFilter !== 'ALL') {
+      result = result.filter(app => {
+        if (employeeFilter === 'UNASSIGNED') return !app.employeeId;
+        return app.employeeId?._id === employeeFilter;
+      });
     }
 
     // Status Filter
@@ -147,6 +184,10 @@ export default function AppointmentsPage() {
           aVal = new Date(a.appointmentDate).getTime();
           bVal = new Date(b.appointmentDate).getTime();
           break;
+        case 'createdAt':
+          aVal = new Date(a.createdAt || 0).getTime();
+          bVal = new Date(b.createdAt || 0).getTime();
+          break;
         case 'status':
           aVal = a.status;
           bVal = b.status;
@@ -166,7 +207,7 @@ export default function AppointmentsPage() {
     });
 
     return result;
-  }, [appointments, searchQuery, statusFilter, urgencyFilter, sortConfig]);
+  }, [appointments, searchQuery, statusFilter, urgencyFilter, employeeFilter, sortConfig]);
 
   const toggleSort = (key: string) => {
     setSortConfig(prev => ({
@@ -181,10 +222,10 @@ export default function AppointmentsPage() {
   };
 
   return (
-    <div className="flex min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-slate-50">
       <Sidebar />
       
-      <main className="flex-1 lg:ml-64 p-4 lg:p-8 pt-20 lg:pt-8">
+      <main className="lg:ml-64 p-4 lg:p-8 pt-24 pb-[50vh]">
         <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-8">
           <div className="flex-1">
             <h2 className="text-2xl lg:text-3xl font-black text-slate-900 tracking-tight">Appointments</h2>
@@ -204,12 +245,21 @@ export default function AppointmentsPage() {
             </div>
             
             <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl p-1 shrink-0">
-              <input 
-                type="date" 
-                value={optimizeDate}
-                onChange={(e) => setOptimizeDate(e.target.value)}
-                className="px-2 py-1 text-sm outline-none font-medium text-slate-600 bg-transparent"
-              />
+              <div className="relative flex items-center pl-2 border-r border-slate-100 pr-1">
+                <CalendarIcon className="w-3.5 h-3.5 text-slate-400 absolute left-2 pointer-events-none" />
+                <select 
+                  value={optimizeDate}
+                  onChange={(e) => setOptimizeDate(e.target.value)}
+                  className="pl-6 pr-6 py-1.5 text-sm outline-none font-bold text-slate-700 bg-transparent cursor-pointer appearance-none hover:text-indigo-600 transition-colors"
+                >
+                  {next7Days.map(day => (
+                    <option key={day.dateStr} value={day.dateStr}>
+                      {day.label}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 pointer-events-none" />
+              </div>
               <button 
                 onClick={handleOptimize}
                 disabled={optimizing}
@@ -229,9 +279,10 @@ export default function AppointmentsPage() {
           </div>
         </header>
 
-        {/* Quick Sort Pills */}
-        <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-2 no-scrollbar">
-          <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest mr-2 whitespace-nowrap">Sort By:</span>
+        {/* Filters and Sort */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+          <div className="flex items-center gap-2 overflow-x-auto pb-2 sm:pb-0 no-scrollbar">
+            <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest mr-2 whitespace-nowrap">Sort By:</span>
           <button 
             onClick={() => toggleSort('appointmentDate')}
             className={cn(
@@ -259,6 +310,25 @@ export default function AppointmentsPage() {
           >
             Employee {sortConfig.key === 'employee' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
           </button>
+          </div>
+          
+          <div className="relative flex items-center shrink-0 bg-white border border-slate-200 hover:border-slate-300 transition-colors rounded-xl overflow-hidden shadow-sm">
+            <div className="pl-3 pr-2 py-1.5 bg-slate-50/50 border-r border-slate-100 flex items-center pointer-events-none">
+               <Filter className="w-3.5 h-3.5 text-slate-400" />
+            </div>
+            <select
+              value={employeeFilter}
+              onChange={(e) => setEmployeeFilter(e.target.value)}
+              className="px-3 pr-8 py-1.5 text-xs font-bold text-slate-700 bg-transparent focus:outline-none appearance-none cursor-pointer w-full hover:text-blue-600 transition-colors"
+            >
+              <option value="ALL">All Employees</option>
+              <option value="UNASSIGNED">Unassigned Only</option>
+              {uniqueEmployees.map(emp => (
+                <option key={emp.id} value={emp.id}>{emp.name}</option>
+              ))}
+            </select>
+            <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-3 pointer-events-none" />
+          </div>
         </div>
 
         <CreateAppointmentModal 
@@ -327,8 +397,11 @@ export default function AppointmentsPage() {
                           </div>
                           
                           {/* Mobile-only info stack */}
-                          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 lg:hidden">
+                          <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 lg:hidden">
                             <p className="text-[11px] font-black text-blue-600 flex items-center gap-1">
+                              <CalendarIcon className="w-3 h-3" /> {format(new Date(app.appointmentDate), 'dd MMM')}
+                            </p>
+                            <p className="text-[11px] font-black text-violet-600 flex items-center gap-1">
                               <Clock className="w-3 h-3" /> {app.timeSlot}
                             </p>
                             <p className="text-[11px] font-bold text-slate-600 flex items-center gap-1">
@@ -390,14 +463,10 @@ export default function AppointmentsPage() {
             )}
           </div>
 
-          <div className="p-4 border-t border-slate-100 bg-white flex items-center justify-between">
-            <p className="text-sm text-slate-500">
+          <div className="p-4 border-t border-slate-100 bg-white flex items-center justify-center">
+            <p className="text-sm font-medium text-slate-500">
               Showing {filteredAppointments.length} of {appointments.length} appointments
             </p>
-            <div className="flex gap-2">
-              <button className="px-3 py-1 text-sm bg-white border border-slate-200 rounded-md hover:bg-slate-50 disabled:opacity-50">Previous</button>
-              <button className="px-3 py-1 text-sm bg-white border border-slate-200 rounded-md hover:bg-slate-50">Next</button>
-            </div>
           </div>
         </div>
       </main>

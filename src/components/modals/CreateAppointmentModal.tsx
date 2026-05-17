@@ -116,9 +116,10 @@ export const CreateAppointmentModal = ({ isOpen, onClose, companyId, clinicId, o
   };
 
   return (
-    <div className="fixed inset-0 z-[100] bg-slate-900/50 backdrop-blur-sm overflow-y-auto p-4 flex justify-center items-start lg:items-center">
-      <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl animate-in fade-in zoom-in duration-200 my-8">
-        <div className="p-6 border-b border-slate-100 flex items-center justify-between shrink-0">
+    <div className="fixed inset-0 z-[100] bg-slate-900/50 backdrop-blur-sm overflow-y-auto">
+      <div className="min-h-full flex items-center justify-center p-4">
+        <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl animate-in fade-in zoom-in duration-200 mt-12 mb-[30vh] text-left">
+          <div className="p-6 border-b border-slate-100 flex items-center justify-between shrink-0">
           <div>
             <h3 className="text-xl font-bold text-slate-900">New Scan Appointment</h3>
             <p className="text-xs text-slate-500 font-medium">Select a date and time for the diagnostic scan.</p>
@@ -291,6 +292,7 @@ export const CreateAppointmentModal = ({ isOpen, onClose, companyId, clinicId, o
           </div>
           <div className="h-24 lg:hidden" />
         </form>
+      </div>
       </div>
     </div>
   );

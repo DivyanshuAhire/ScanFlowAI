@@ -62,6 +62,9 @@ export default function ClinicDashboard() {
   const { appointments, loading: appointmentsLoading, fetchAppointments } = useClinicAppointments(user?.clinicId || null);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [historyDateFilter, setHistoryDateFilter] = useState('ALL');
+  const [customHistoryDate, setCustomHistoryDate] = useState('');
 
   useEffect(() => {
     if (authLoading) return;
@@ -106,9 +109,34 @@ export default function ClinicDashboard() {
     (format(new Date(app.appointmentDate), 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd'))
   );
 
-  const previous = appointments.filter(app => 
-    isBefore(new Date(app.appointmentDate), startOfDay(new Date()))
-  );
+  const previous = appointments.filter(app => {
+    const isPast = isBefore(new Date(app.appointmentDate), startOfDay(new Date()));
+    if (!isPast) return false;
+
+    if (historyDateFilter === 'ALL') return true;
+
+    const appDate = new Date(app.appointmentDate);
+    const today = new Date();
+
+    if (historyDateFilter === '7_DAYS') {
+      const diffTime = Math.abs(today.getTime() - appDate.getTime());
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      return diffDays <= 7;
+    }
+
+    if (historyDateFilter === '30_DAYS') {
+      const diffTime = Math.abs(today.getTime() - appDate.getTime());
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      return diffDays <= 30;
+    }
+
+    if (historyDateFilter === 'CUSTOM' && customHistoryDate) {
+      const formattedAppDate = format(appDate, 'yyyy-MM-dd');
+      return formattedAppDate === customHistoryDate;
+    }
+
+    return true;
+  });
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -116,54 +144,45 @@ export default function ClinicDashboard() {
       <nav className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between sticky top-0 z-10">
         <div className="flex items-center gap-8">
           <h1 className="text-xl font-bold text-blue-600">ScanFlow <span className="text-slate-400 font-medium">| Clinic Portal</span></h1>
-          <div className="hidden md:flex items-center gap-6">
-            <Link href="/clinic/dashboard" className="text-sm font-bold text-blue-600">Dashboard</Link>
-            <Link href="/clinic/appointments" className="text-sm font-medium text-slate-500 hover:text-slate-900">Appointments</Link>
-            <Link href="/clinic/history" className="text-sm font-medium text-slate-500 hover:text-slate-900">History</Link>
-          </div>
         </div>
         <div className="flex items-center gap-4 relative">
-          <button className="p-2 text-slate-400 hover:text-slate-900 relative">
-            <Bell className="w-5 h-5" />
-            <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
-          </button>
-          
-          <div className="relative group">
-            <button className="w-8 h-8 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center hover:bg-blue-100 transition-colors">
+          <div className="relative">
+            <button 
+              onClick={() => setShowDropdown(prev => !prev)}
+              className="w-8 h-8 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center hover:bg-blue-100 transition-colors focus:outline-none"
+            >
               <User className="w-4 h-4" />
             </button>
             
             {/* Profile Dropdown */}
-            <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden hidden group-hover:block animate-in fade-in slide-in-from-top-2 duration-200 z-50">
-              <div className="p-4 border-b border-slate-50">
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Account</p>
-                <p className="text-sm font-bold text-slate-900 truncate">{user?.name}</p>
-              </div>
-              <div className="p-2">
-                <button 
-                  onClick={() => {
-                    const { logout } = useUser(); // Using it inside here won't work easily, better use the one from top
-                  }}
-                  className="hidden"
-                >
-                </button>
-                <button 
-                  onClick={() => {
-                    localStorage.removeItem('scanflow_user');
-                    localStorage.removeItem('scanflow_token');
-                    window.location.href = '/auth/login';
-                  }}
-                  className="w-full text-left px-3 py-2 text-sm font-medium text-rose-600 hover:bg-rose-50 rounded-lg transition-colors flex items-center gap-2"
-                >
-                  <LogOut className="w-4 h-4" /> Sign Out
-                </button>
-              </div>
-            </div>
+            {showDropdown && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowDropdown(false)} />
+                <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200 z-50">
+                  <div className="p-4 border-b border-slate-50">
+                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Account</p>
+                    <p className="text-sm font-bold text-slate-900 truncate">{user?.name}</p>
+                  </div>
+                  <div className="p-2">
+                    <button 
+                      onClick={() => {
+                        localStorage.removeItem('scanflow_user');
+                        localStorage.removeItem('scanflow_token');
+                        window.location.href = '/auth/login';
+                      }}
+                      className="w-full text-left px-3 py-2 text-sm font-medium text-rose-600 hover:bg-rose-50 rounded-lg transition-colors flex items-center gap-2"
+                    >
+                      <LogOut className="w-4 h-4" /> Sign Out
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </nav>
 
-      <main className="max-w-5xl mx-auto p-6 lg:p-10">
+      <main className="max-w-5xl mx-auto p-6 lg:p-10 pb-[50vh]">
         <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10">
           <div>
             <h2 className="text-3xl font-black text-slate-900">Welcome, {user?.name || 'Clinic Admin'}</h2>
@@ -184,7 +203,6 @@ export default function ClinicDashboard() {
                 <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
                   <Calendar className="w-5 h-5 text-blue-600" /> Upcoming Appointments
                 </h3>
-                <Link href="/clinic/appointments" className="text-sm font-bold text-blue-600 hover:underline">View All</Link>
               </div>
               
               {loading ? (
@@ -205,10 +223,34 @@ export default function ClinicDashboard() {
             </section>
 
             <section>
-              <div className="flex items-center justify-between mb-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
                 <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
                   <History className="w-5 h-5 text-slate-400" /> Recent History
                 </h3>
+                
+                <div className="flex items-center gap-2">
+                  {historyDateFilter === 'CUSTOM' && (
+                    <input 
+                      type="date"
+                      value={customHistoryDate}
+                      onChange={(e) => setCustomHistoryDate(e.target.value)}
+                      className="text-xs font-bold text-slate-700 bg-white border border-slate-200 rounded-xl px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-sm"
+                    />
+                  )}
+                  <div className="relative flex items-center bg-white border border-slate-200 rounded-xl px-3 py-1.5 hover:border-slate-300 transition-colors shadow-sm">
+                    <select
+                      value={historyDateFilter}
+                      onChange={(e) => setHistoryDateFilter(e.target.value)}
+                      className="text-xs font-bold text-slate-700 bg-transparent focus:outline-none appearance-none cursor-pointer pr-4"
+                    >
+                      <option value="ALL">All Past Dates</option>
+                      <option value="7_DAYS">Last 7 Days</option>
+                      <option value="30_DAYS">Last 30 Days</option>
+                      <option value="CUSTOM">Specific Date...</option>
+                    </select>
+                    <span className="pointer-events-none absolute right-2.5 text-slate-400 text-[8px]">▼</span>
+                  </div>
+                </div>
               </div>
               <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
                 {loading ? (

@@ -24,7 +24,6 @@ const menuConfigs = {
   SUPER_ADMIN: [
     { name: 'Global Overview', icon: LayoutDashboard, href: '/superadmin/dashboard' },
     { name: 'Companies', icon: ShieldCheck, href: '/superadmin/companies' },
-    { name: 'Global Clinics', icon: Hospital, href: '/superadmin/clinics' },
     { name: 'System Logs', icon: Truck, href: '/superadmin/logs' },
   ],
   COMPANY_ADMIN: [
@@ -32,8 +31,6 @@ const menuConfigs = {
     { name: 'Dashboard', icon: LayoutDashboard, href: '/company/dashboard' },
     { name: 'Clinics', icon: Hospital, href: '/company/clinics' },
     { name: 'Employees', icon: Users, href: '/company/employees' },
-    { name: 'Clusters', icon: MapPin, href: '/company/clusters' },
-    { name: 'Routes', icon: Truck, href: '/company/routes' },
     { name: 'Settings', icon: Settings, href: '/company/settings' },
   ],
   CLINIC_USER: [
@@ -76,7 +73,7 @@ export const Sidebar = () => {
       )}
 
       <aside className={cn(
-        "w-64 h-screen bg-slate-900 text-white flex flex-col fixed left-0 top-0 z-50 transition-transform duration-300 lg:translate-x-0",
+        "w-64 bg-slate-900 text-white flex flex-col fixed inset-y-0 left-0 z-50 transition-transform duration-300 lg:translate-x-0",
         isOpen ? "translate-x-0" : "-translate-x-full"
       )}>
         <div className="p-6 flex items-center justify-between">
@@ -111,17 +108,17 @@ export const Sidebar = () => {
               </Link>
             );
           })}
+          
+          <div className="pt-4 mt-4 border-t border-slate-800">
+            <button 
+              onClick={handleLogout}
+              className="flex items-center gap-3 px-4 py-3 w-full text-rose-500 hover:bg-rose-500/10 rounded-lg transition-colors group"
+            >
+              <LogOut className="w-5 h-5 group-hover:scale-110 transition-transform" />
+              <span className="font-bold">Logout</span>
+            </button>
+          </div>
         </nav>
-
-        <div className="p-4 border-t border-slate-800">
-          <button 
-            onClick={handleLogout}
-            className="flex items-center gap-3 px-4 py-3 w-full text-slate-400 hover:text-red-400 hover:bg-slate-800 rounded-lg transition-colors"
-          >
-            <LogOut className="w-5 h-5" />
-            <span className="font-medium">Logout</span>
-          </button>
-        </div>
       </aside>
     </>
   );

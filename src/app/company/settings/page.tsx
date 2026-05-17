@@ -83,10 +83,10 @@ export default function CompanySettings() {
   }
 
   return (
-    <div className="flex min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-slate-50">
       <Sidebar />
       
-      <main className="flex-1 lg:ml-64 p-4 lg:p-8 pt-20 lg:pt-8">
+      <main className="lg:ml-64 p-4 lg:p-8 pt-24 pb-[50vh]">
         <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
           <div>
             <h2 className="text-2xl lg:text-3xl font-black text-slate-900 tracking-tight">Company Settings</h2>

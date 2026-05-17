@@ -47,6 +47,40 @@ export default function CompanyDashboard() {
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
+  const handleExport = () => {
+    if (!stats) return;
+    
+    let csvContent = "data:text/csv;charset=utf-8,";
+    
+    // Header Section
+    csvContent += "=== OPERATIONS SUMMARY METRICS ===\n";
+    csvContent += `Total Appointments,${stats.totalAppointments || 0}\n`;
+    csvContent += `Active Employees,${stats.activeEmployees || 0}\n`;
+    csvContent += `Route Efficiency,${stats.routeEfficiency || 0}%\n`;
+    csvContent += `Pending Confirmations,${stats.pendingConfirmations || 0}\n\n`;
+    
+    // Employee Performance Section
+    csvContent += "=== EMPLOYEE PERFORMANCE (LAST 30 DAYS) ===\n";
+    csvContent += "Employee Name,Total Assigned,Completed,Completion Rate (%)\n";
+    
+    if (stats.employeeStats && stats.employeeStats.length > 0) {
+      stats.employeeStats.forEach((emp: any) => {
+        csvContent += `"${emp.name.replace(/"/g, '""')}",${emp.total},${emp.completed},${emp.completionRate}%\n`;
+      });
+    } else {
+      csvContent += "No employee data available\n";
+    }
+    
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    const dateStr = new Date().toISOString().split('T')[0];
+    link.setAttribute("download", `operations_report_${dateStr}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   useEffect(() => {
     if (authLoading) return;
     
@@ -75,17 +109,21 @@ export default function CompanyDashboard() {
   }
 
   return (
-    <div className="flex min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-slate-50">
       <Sidebar />
       
-      <main className="flex-1 lg:ml-64 p-4 lg:p-8 pt-20 lg:pt-8">
+      <main className="lg:ml-64 p-4 lg:p-8 pt-24 pb-[50vh]">
         <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
           <div>
             <h2 className="text-2xl lg:text-3xl font-black text-slate-900 tracking-tight">Operations Overview</h2>
             <p className="text-slate-500 font-medium text-sm">Real-time monitoring of your diagnostic flow.</p>
           </div>
           <div className="flex flex-wrap gap-3">
-            <button className="flex-1 md:flex-none px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium hover:bg-slate-50 transition-colors">
+            <button 
+              onClick={handleExport}
+              disabled={!stats}
+              className="flex-1 md:flex-none px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium hover:bg-slate-50 transition-colors disabled:opacity-50"
+            >
               Export Report
             </button>
             <button 
@@ -151,10 +189,53 @@ export default function CompanyDashboard() {
           </div>
 
           <div className="card-premium">
-            <h3 className="font-bold text-slate-900 text-lg mb-6">Cluster Load Balancing</h3>
-            <div className="flex flex-col items-center justify-center h-64 text-center">
-              <Activity className="w-10 h-10 text-slate-200 mb-3" />
-              <p className="text-slate-400 text-sm italic px-4">Cluster load data will be calculated automatically based on geographic density.</p>
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h3 className="font-bold text-slate-900 text-lg">Employee Performance</h3>
+                <p className="text-xs text-slate-500 font-medium">Fulfillment rate over the last 30 days</p>
+              </div>
+              <Users className="w-5 h-5 text-slate-400" />
+            </div>
+            
+            <div className="space-y-6">
+              {!stats?.employeeStats || stats.employeeStats.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-52 text-center">
+                  <Users className="w-10 h-10 text-slate-200 mb-3" />
+                  <p className="text-slate-400 text-sm italic px-4">No active employee performance records found.</p>
+                </div>
+              ) : (
+                stats.employeeStats.map((emp: any) => (
+                  <div key={emp._id} className="space-y-2">
+                    <div className="flex items-center justify-between text-sm">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center text-xs font-black uppercase shrink-0">
+                          {emp.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2)}
+                        </div>
+                        <span className="font-bold text-slate-800 truncate max-w-[120px]">{emp.name}</span>
+                      </div>
+                      <span className="text-xs font-black text-slate-500 shrink-0">
+                        {emp.completed}/{emp.total} Done
+                      </span>
+                    </div>
+                    
+                    <div className="relative pt-1">
+                      <div className="overflow-hidden h-2 text-xs flex rounded-full bg-slate-100">
+                        <div
+                          style={{ width: `${emp.completionRate}%` }}
+                          className={cn(
+                            "shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center transition-all duration-500",
+                            emp.completionRate >= 80 ? "bg-emerald-500" :
+                            emp.completionRate >= 50 ? "bg-amber-500" : "bg-slate-400"
+                          )}
+                        />
+                      </div>
+                      <span className="absolute -top-3.5 right-0 text-[9px] font-black text-slate-600">
+                        {emp.completionRate}%
+                      </span>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </div>

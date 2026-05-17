@@ -35,6 +35,14 @@ export default function SuperAdminClinics() {
       ]);
       setClinics(clinicsRes.data);
       setCompanies(companiesRes.data);
+
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        const queryCompanyId = params.get('companyId');
+        if (queryCompanyId) {
+          setSelectedCompanyId(queryCompanyId);
+        }
+      }
     } catch (err) {
       console.error(err);
     } finally {

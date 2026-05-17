@@ -81,16 +81,16 @@ export const EditClinicModal = ({ isOpen, onClose, companyId, clinic, onSuccess 
   };
 
   return (
-    <div className="fixed inset-0 z-[100] bg-slate-900/50 backdrop-blur-sm overflow-y-auto p-4 flex justify-center items-start lg:items-center">
-      <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200 my-8">
-        <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+    <div className="fixed inset-0 z-[100] bg-slate-900/50 backdrop-blur-sm p-4 flex justify-center items-center">
+      <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200 my-auto max-h-[90vh] flex flex-col">
+        <div className="p-6 border-b border-slate-100 flex items-center justify-between shrink-0">
           <h3 className="text-xl font-bold text-slate-900">Edit Diagnostic Clinic</h3>
           <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
             <X className="w-5 h-5 text-slate-500" />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 pb-24 lg:pb-12 space-y-8">
+        <form onSubmit={handleSubmit} className="p-6 overflow-y-auto space-y-8 flex-1 pb-48">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-2">
               <label className="text-sm font-bold text-slate-700">Clinic Name</label>
