@@ -241,13 +241,18 @@ export const CreateAppointmentModal = ({ isOpen, onClose, companyId, clinicId, o
                         ? "bg-slate-50 border-slate-100 text-slate-300 cursor-not-allowed"
                         : formData.timeSlot === slot.time
                         ? "bg-blue-600 border-blue-600 text-white shadow-lg shadow-blue-200"
-                        : slot.isNearby
+                        : slot.isRecommended
                         ? "bg-green-100 border-green-500 text-green-700 hover:bg-green-200 hover:text-green-800"
                         : "bg-white border-slate-200 text-slate-600 hover:border-blue-400 hover:text-blue-600"
                     )}
                   >
                     {slot.time}
-                    {slot.available && (
+                    {slot.isRecommended && (
+                      <span className="absolute -top-2 -right-2 bg-green-500 text-white text-[8px] font-black px-1.5 py-0.5 rounded shadow-sm">
+                        BEST
+                      </span>
+                    )}
+                    {slot.available && !slot.isRecommended && (
                       <span className={cn(
                         "absolute -top-1 -right-1 w-2 h-2 rounded-full border border-white",
                         slot.remaining > 1 ? "bg-emerald-500" : "bg-amber-500"
@@ -256,7 +261,7 @@ export const CreateAppointmentModal = ({ isOpen, onClose, companyId, clinicId, o
                     {/* Tooltip-like capacity info */}
                     <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 hidden group-hover:block z-20 pointer-events-none">
                       <div className="bg-slate-800 text-white text-[10px] px-2 py-1 rounded whitespace-nowrap">
-                        {slot.available ? (slot.isNearby ? '1 tech is already nearby select this' : `${slot.remaining} techs free`) : (slot.reason || 'Fully booked')}
+                        {slot.available ? (slot.isRecommended ? 'Optimal route match' : `${slot.remaining} techs free`) : (slot.reason || 'Fully booked')}
                       </div>
                     </div>
                   </button>

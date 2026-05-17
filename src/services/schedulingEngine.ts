@@ -121,9 +121,10 @@ export class SchedulingEngineService {
       }
 
       // Massive baseline bonus for being already active today to prevent picking brand new employees
+      // Reduced to 150 so that excessively far routes (zig-zags) can still lose to a fresh employee
       const isActiveToday = dayAppointments.some(a => a.employeeId?.toString() === tech._id.toString());
       if (isActiveToday) {
-          score -= 500;
+          score -= 150;
       }
 
       // Additional bonus only if working in a nearby or same cluster
@@ -279,7 +280,7 @@ export class SchedulingEngineService {
    * Calculates available hourly slots for a company on a specific date.
    */
   static async getAvailableSlots(companyId: string, date: Date, clinicId?: string) {
-    const slots: { time: string; available: boolean; remaining: number; reason?: string; isNearby?: boolean }[] = [];
+    const slots: { time: string; available: boolean; remaining: number; reason?: string; isNearby?: boolean; bestScore?: number; isRecommended?: boolean }[] = [];
     const hours = ['09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00'];
 
     const technicians = await Employee.find({ companyId, status: 'ACTIVE', isDeleted: false }).lean();
@@ -332,7 +333,7 @@ export class SchedulingEngineService {
       let available = false;
       let remainingCount = 0;
       let reason: string | undefined;
-      let isNearby = false;
+      let bestScoreForSlot = Infinity;
 
       if (targetCluster) {
         const isClusterBookedAtHour = clusterAppointments.some(app => app.timeSlot === hour);
@@ -342,39 +343,33 @@ export class SchedulingEngineService {
            remainingCount = 0;
            reason = 'Cluster slot fully booked';
         } else {
-          // Smart availability: Check if AT LEAST ONE technician is feasible
-          const feasibleTechIds = new Set<string>();
+          // Smart availability: Evaluate all feasible technicians and compute lowest routing score
           for (const tech of technicians) {
             const res = await engine.isTechnicianFeasible(tech, targetCluster, date, hour, dayAppointments);
             if (res.feasible) {
               available = true;
               remainingCount++;
-              feasibleTechIds.add(tech._id.toString());
+              
+              let score = 0;
+              const { distanceToTarget, travelTimeToTarget, previousClusterId } = res.details;
+              score += (distanceToTarget * 5) + (travelTimeToTarget * 3);
+              
+              const isActiveToday = dayAppointments.some(a => a.employeeId?.toString() === tech._id.toString());
+              if (isActiveToday) score -= 150;
+
+              if (previousClusterId) {
+                 if (previousClusterId === targetCluster._id.toString() || distanceToTarget <= 5) {
+                    score -= 100;
+                 }
+              }
+
+              if (score < bestScoreForSlot) {
+                 bestScoreForSlot = score;
+              }
             }
           }
 
-          if (available) {
-             const hourInt = parseInt(hour.split(':')[0]);
-             const adjacentHours = [`${(hourInt - 1).toString().padStart(2, '0')}:00`, `${(hourInt + 1).toString().padStart(2, '0')}:00`];
-             
-             const adjacentNearbyOrSameApps = dayAppointments.filter(app => {
-                if (!adjacentHours.includes(app.timeSlot)) return false;
-                const appClinic = app.clinicId as any;
-                if (!appClinic?.clusterId) return false;
-                const appClusterId = appClinic.clusterId.toString();
-                return appClusterId === targetCluster._id.toString() || nearbyClusterIds.includes(appClusterId);
-             });
-
-             const hasFeasibleNearbyTech = adjacentNearbyOrSameApps.some(app => 
-                app.employeeId && feasibleTechIds.has(app.employeeId.toString())
-             );
-
-             const isBookedInNearby = nearbyClusterAppointments.some(app => app.timeSlot === hour);
-             
-             if (hasFeasibleNearbyTech && !isBookedInNearby) {
-               isNearby = true;
-             }
-          } else {
+          if (!available) {
              reason = 'No technician can reach this location';
           }
         }
@@ -391,8 +386,34 @@ export class SchedulingEngineService {
         available: available,
         remaining: remainingCount,
         reason,
-        isNearby
+        bestScore: targetCluster ? bestScoreForSlot : Infinity,
+        isRecommended: false
       });
+    }
+
+    // Dynamic Slot Recommendation Logic based on actual Routing Score
+    let recommendedSlotIndex = -1;
+    let lowestSlotScore = Infinity;
+    
+    for (let i = 0; i < slots.length; i++) {
+        if (slots[i].available && slots[i].bestScore !== undefined && slots[i].bestScore < lowestSlotScore) {
+            lowestSlotScore = slots[i].bestScore;
+            recommendedSlotIndex = i;
+        }
+    }
+
+    if (recommendedSlotIndex === -1) {
+        // Fallback if no specific best score (e.g. all equal or no cluster)
+        for (let i = 0; i < slots.length; i++) {
+            if (slots[i].available) {
+                recommendedSlotIndex = i;
+                break;
+            }
+        }
+    }
+
+    if (recommendedSlotIndex !== -1) {
+        slots[recommendedSlotIndex].isRecommended = true;
     }
 
     return slots;
@@ -420,6 +441,46 @@ export class SchedulingEngineService {
     } else {
       console.log(`❌ [ENGINE] No feasible technician found for appointment ${appointmentId} at ${appointment.timeSlot}`);
     }
+  }
+
+  /**
+   * Optimize the schedule for an entire day by unassigning everyone and greedily re-assigning chronologically.
+   * This ensures the optimal global routing paths are chosen once all daily appointments are known.
+   */
+  async optimizeScheduleForDate(companyId: string, date: Date): Promise<number> {
+    const start = startOfDay(date);
+    const end = endOfDay(date);
+
+    // 1. Fetch all non-deleted appointments for the date, sorted chronologically
+    const appointments = await Appointment.find({
+      companyId,
+      appointmentDate: { $gte: start, $lte: end },
+      isDeleted: false
+    }).sort({ timeSlot: 1 });
+
+    if (appointments.length === 0) return 0;
+
+    console.log(`[ENGINE] Optimizing schedule for ${appointments.length} appointments on ${format(date, 'yyyy-MM-dd')}`);
+
+    // 2. Clear all assignments to reset the board
+    for (const app of appointments) {
+      app.employeeId = undefined as any;
+      app.status = 'REQUESTED' as any;
+      await app.save();
+    }
+
+    // 3. Sequentially re-assign each one using the updated routing engine
+    let assignedCount = 0;
+    for (const app of appointments) {
+      await this.autoAssignEmployee(app._id.toString());
+      const updatedApp = await Appointment.findById(app._id);
+      if (updatedApp && updatedApp.employeeId) {
+        assignedCount++;
+      }
+    }
+
+    console.log(`[ENGINE] Optimization complete. Successfully assigned ${assignedCount}/${appointments.length} appointments.`);
+    return assignedCount;
   }
 }
 

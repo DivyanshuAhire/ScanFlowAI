@@ -18,7 +18,8 @@ import {
   ChevronUp,
   ChevronDown,
   X,
-  Trash2
+  Trash2,
+  RefreshCw
 } from 'lucide-react';
 import { useUser } from '@/context/UserContext';
 import { useAppointments } from '@/hooks/useAppointments';
@@ -48,6 +49,28 @@ export default function AppointmentsPage() {
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   
+  // Optimization State
+  const [optimizeDate, setOptimizeDate] = useState(() => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    return tomorrow.toISOString().split('T')[0];
+  });
+  const [optimizing, setOptimizing] = useState(false);
+
+  const handleOptimize = async () => {
+    if (!user?.companyId || !optimizeDate) return;
+    try {
+      setOptimizing(true);
+      const res = await axios.post('/api/appointments/optimize', { companyId: user.companyId, date: optimizeDate });
+      toast.success(`Successfully re-assigned ${res.data.count} appointments for ${optimizeDate}`);
+      fetchAppointments();
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || 'Failed to optimize schedule');
+    } finally {
+      setOptimizing(false);
+    }
+  };
+
   // Filtering & Sorting State
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
@@ -67,9 +90,6 @@ export default function AppointmentsPage() {
       return;
     }
 
-    // Since useAppointments handles its own loading, we just bridge it here if needed,
-    // or just use appointmentsLoading directly. 
-    // To fix the "infinite loading", we must ensure we stop showing the spinner.
     setLoading(appointmentsLoading);
   }, [user, authLoading, appointmentsLoading]);
 
@@ -182,9 +202,27 @@ export default function AppointmentsPage() {
                 className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none font-medium text-sm transition-all"
               />
             </div>
+            
+            <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl p-1 shrink-0">
+              <input 
+                type="date" 
+                value={optimizeDate}
+                onChange={(e) => setOptimizeDate(e.target.value)}
+                className="px-2 py-1 text-sm outline-none font-medium text-slate-600 bg-transparent"
+              />
+              <button 
+                onClick={handleOptimize}
+                disabled={optimizing}
+                className="btn-secondary flex items-center justify-center gap-2 text-xs py-1.5 px-3 whitespace-nowrap bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border-none rounded-lg font-bold disabled:opacity-50"
+              >
+                {optimizing ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                Optimize
+              </button>
+            </div>
+
             <button 
               onClick={() => setIsModalOpen(true)}
-              className="btn-primary flex items-center justify-center gap-2 whitespace-nowrap"
+              className="btn-primary flex items-center justify-center gap-2 whitespace-nowrap shrink-0"
             >
               <Plus className="w-4 h-4" /> New Appointment
             </button>
