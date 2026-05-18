@@ -1,4 +1,4 @@
-import { Cluster, Company, Route } from '@/models';
+import { Cluster, Company, Route, ClusterDistanceMatrix } from '@/models';
 import ClusterEdge from '@/models/ClusterEdge';
 
 const degreesToRadians = (degrees: number) => degrees * (Math.PI / 180);
@@ -218,28 +218,172 @@ export class RouteGraphEngine {
         return (itemA?.distance || 0) - (itemB?.distance || 0);
       });
 
+      // Establish parent-child tree linkages
       for (let seq = 0; seq < routeClusters.length; seq++) {
         const c = routeClusters[seq];
         const cItem = clustersWithPaths.find(ci => ci.cluster._id.toString() === c._id.toString());
+        
         c.sequenceIndex = seq + 1;
         c.cumulativeDistanceFromHQ = cItem?.distance || 0;
+
+        if (seq === 0) {
+          // The closest cluster to HQ has no parent cluster within the route (it connects to HQ)
+          c.parent_cluster = undefined;
+        } else {
+          // Parent is the geographically closest cluster in the same route that is closer to HQ (smaller index)
+          let bestParent = routeClusters[0];
+          let minDistance = Infinity;
+          
+          for (let j = 0; j < seq; j++) {
+            const candidate = routeClusters[j];
+            const dist = calculateDistance(c.center_lat, c.center_lng, candidate.center_lat, candidate.center_lng);
+            if (dist < minDistance) {
+              minDistance = dist;
+              bestParent = candidate;
+            }
+          }
+          c.parent_cluster = bestParent._id;
+        }
+        
         await c.save();
       }
 
-      // Create a single driving line from HQ (companyId) to the farthest cluster (active.cluster._id)
-      try {
-        await ClusterEdge.create({
-          from_cluster: companyId,
-          to_cluster: active.cluster._id,
-          distance: active.distance,
-          travel_time: active.travelTime,
-          geometry: active.geometry
-        });
-        console.log(`➜ Rendered Unified Route Line: HQ ➜ '${active.cluster.name}'`);
-      } catch (err) {
-        console.error('Failed to save route edge:', err);
+      // Generate tree-based road path edges between nodes
+      for (const c of routeClusters) {
+        let fromId: string;
+        let fromLat: number;
+        let fromLng: number;
+        let fromName: string;
+
+        if (!c.parent_cluster) {
+          fromId = companyId.toString();
+          fromLat = hqLat;
+          fromLng = hqLng;
+          fromName = 'HQ';
+        } else {
+          const parent = routeClusters.find(rc => rc._id.toString() === c.parent_cluster!.toString());
+          if (!parent) continue;
+          fromId = parent._id.toString();
+          fromLat = parent.center_lat;
+          fromLng = parent.center_lng;
+          fromName = parent.name;
+        }
+
+        const toId = c._id.toString();
+        const toLat = c.center_lat;
+        const toLng = c.center_lng;
+
+        let branchDistance = calculateDistance(fromLat, fromLng, toLat, toLng);
+        let branchTravelTime = (branchDistance / 40) * 60; // fallback
+        let branchGeometry: [number, number][] = [[fromLat, fromLng], [toLat, toLng]]; // fallback
+
+        try {
+          const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&geometries=geojson`;
+          const response = await fetch(osrmUrl);
+          if (response.ok) {
+            const result = await response.json();
+            if (result.routes && result.routes.length > 0) {
+              const r = result.routes[0];
+              branchDistance = r.distance / 1000;
+              branchTravelTime = r.duration / 60;
+              if (r.geometry && r.geometry.coordinates) {
+                branchGeometry = r.geometry.coordinates.map((coord: any) => [coord[1], coord[0]]);
+              }
+            }
+          }
+        } catch (err) {
+          console.warn(`OSRM branch path request failed from ${fromName} to ${c.name}:`, err);
+        }
+
+        try {
+          await ClusterEdge.create({
+            from_cluster: fromId,
+            to_cluster: toId,
+            distance: branchDistance,
+            travel_time: branchTravelTime,
+            geometry: branchGeometry
+          });
+          console.log(`➜ Rendered Tree Edge: ${fromName} ➜ '${c.name}'`);
+        } catch (err) {
+          console.error('Failed to save tree edge:', err);
+        }
       }
     }
+
+    // 6. Generate and store route-based distances between every cluster and every other cluster/subcluster
+    console.log(`➜ Generating route-based pairwise distances for company ${companyId}...`);
+    const allClusters = await Cluster.find({ companyId, isDeleted: false });
+
+    const getRouteBasedDistance = async (c1: any, c2: any): Promise<number> => {
+      if (c1.route_id && c2.route_id && c1.route_id.toString() === c2.route_id.toString()) {
+        return Math.abs((c1.cumulativeDistanceFromHQ || 0) - (c2.cumulativeDistanceFromHQ || 0));
+      }
+
+      try {
+        const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${c1.center_lng},${c1.center_lat};${c2.center_lng},${c2.center_lat}?overview=false`;
+        const response = await fetch(osrmUrl);
+        if (response.ok) {
+          const result = await response.json();
+          if (result.routes && result.routes.length > 0) {
+            return result.routes[0].distance / 1000; // in km
+          }
+        }
+      } catch (err) {
+        console.warn(`OSRM distance fetch failed between ${c1.name} and ${c2.name}:`, err);
+      }
+
+      // Fallback: geographic displacement with 1.3x routing factor
+      const R = 6371;
+      const dLat = (c2.center_lat - c1.center_lat) * Math.PI / 180;
+      const dLon = (c2.center_lng - c1.center_lng) * Math.PI / 180;
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(c1.center_lat * Math.PI / 180) * Math.cos(c2.center_lat * Math.PI / 180) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c * 1.3;
+    };
+
+    for (let i = 0; i < allClusters.length; i++) {
+      for (let j = i + 1; j < allClusters.length; j++) {
+        const c1 = allClusters[i];
+        const c2 = allClusters[j];
+
+        const fromId = c1._id.toString();
+        const toId = c2._id.toString();
+        const sortedIds = [fromId, toId].sort();
+
+        // Skip if already in database (unless we want to overwrite, but keeping preserves manual overrides)
+        const existing = await ClusterDistanceMatrix.findOne({
+          companyId,
+          fromClusterId: sortedIds[0],
+          toClusterId: sortedIds[1],
+          isDeleted: false
+        });
+
+        if (existing && existing.distance > 0) {
+          continue;
+        }
+
+        const distance = await getRouteBasedDistance(c1, c2);
+        const travelTime = distance * 3; // 3 min per km formula
+
+        await ClusterDistanceMatrix.findOneAndUpdate(
+          {
+            companyId,
+            fromClusterId: sortedIds[0],
+            toClusterId: sortedIds[1]
+          },
+          {
+            distance,
+            travelTime,
+            isDeleted: false
+          },
+          { upsert: true }
+        );
+      }
+    }
+    console.log(`➜ Pairwise distance matrix generation complete.`);
   }
 }
 

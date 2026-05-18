@@ -49,43 +49,7 @@ export default function AppointmentsPage() {
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   
-  // Optimization State
-  const next7Days = useMemo(() => {
-    const days = [];
-    let current = new Date();
-    while (days.length < 7) {
-      if (current.getDay() !== 0) { // Skip Sunday
-        days.push({
-          dateStr: current.toISOString().split('T')[0],
-          label: format(current, 'EEE, MMM dd')
-        });
-      }
-      current.setDate(current.getDate() + 1);
-    }
-    return days;
-  }, []);
 
-  const [optimizeDate, setOptimizeDate] = useState(() => {
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    if (tomorrow.getDay() === 0) tomorrow.setDate(tomorrow.getDate() + 1);
-    return tomorrow.toISOString().split('T')[0];
-  });
-  const [optimizing, setOptimizing] = useState(false);
-
-  const handleOptimize = async () => {
-    if (!user?.companyId || !optimizeDate) return;
-    try {
-      setOptimizing(true);
-      const res = await axios.post('/api/appointments/optimize', { companyId: user.companyId, date: optimizeDate });
-      toast.success(`Successfully re-assigned ${res.data.count} appointments for ${optimizeDate}`);
-      fetchAppointments();
-    } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Failed to optimize schedule');
-    } finally {
-      setOptimizing(false);
-    }
-  };
 
   // Filtering & Sorting State
   const [searchQuery, setSearchQuery] = useState('');
@@ -244,31 +208,7 @@ export default function AppointmentsPage() {
               />
             </div>
             
-            <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl p-1 shrink-0">
-              <div className="relative flex items-center pl-2 border-r border-slate-100 pr-1">
-                <CalendarIcon className="w-3.5 h-3.5 text-slate-400 absolute left-2 pointer-events-none" />
-                <select 
-                  value={optimizeDate}
-                  onChange={(e) => setOptimizeDate(e.target.value)}
-                  className="pl-6 pr-6 py-1.5 text-sm outline-none font-bold text-slate-700 bg-transparent cursor-pointer appearance-none hover:text-indigo-600 transition-colors"
-                >
-                  {next7Days.map(day => (
-                    <option key={day.dateStr} value={day.dateStr}>
-                      {day.label}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 pointer-events-none" />
-              </div>
-              <button 
-                onClick={handleOptimize}
-                disabled={optimizing}
-                className="btn-secondary flex items-center justify-center gap-2 text-xs py-1.5 px-3 whitespace-nowrap bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border-none rounded-lg font-bold disabled:opacity-50"
-              >
-                {optimizing ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
-                Optimize
-              </button>
-            </div>
+
 
             <button 
               onClick={() => setIsModalOpen(true)}

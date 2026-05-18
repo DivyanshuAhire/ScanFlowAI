@@ -28,32 +28,19 @@ export class SpatialGraphService {
       this.addEdge(md.fromClusterId.toString(), md.toClusterId.toString(), md.distance);
     }
 
-    // 2. Add Route-based Connections (Fallback/Heuristic)
-    const routesMap = new Map<string, any[]>();
-    for (const cluster of clusters) {
-      for (const routeId of cluster.routeGroupIds) {
-        const routeIdStr = routeId.toString();
-        if (!routesMap.has(routeIdStr)) {
-          routesMap.set(routeIdStr, []);
-        }
-        routesMap.get(routeIdStr)!.push(cluster);
-      }
-    }
-
-    for (const [routeId, routeClusters] of routesMap.entries()) {
-      routeClusters.sort((a, b) => a.distanceFromHQ - b.distanceFromHQ);
-
-      for (let i = 0; i < routeClusters.length - 1; i++) {
-        const c1 = routeClusters[i];
-        const c2 = routeClusters[i + 1];
-        
-        const c1Id = c1._id.toString();
-        const c2Id = c2._id.toString();
+    // 2. Add Route-based Connections (Tree-based)
+    for (const cluster of clusters as any[]) {
+      if (cluster.route_id && cluster.parent_cluster) {
+        const c1Id = cluster._id.toString();
+        const c2Id = cluster.parent_cluster.toString();
 
         // Check if a manual edge already exists
         const existing = this.adjacencyList.get(c1Id)?.find(e => e.to === c2Id);
         if (!existing) {
-          const weight = Math.abs(c2.distanceFromHQ - c1.distanceFromHQ);
+          const parentClusterObj = clusters.find(cl => cl._id.toString() === c2Id);
+          const weight = parentClusterObj 
+            ? Math.abs((cluster.cumulativeDistanceFromHQ || 0) - (parentClusterObj.cumulativeDistanceFromHQ || 0)) 
+            : 1;
           this.addEdge(c1Id, c2Id, weight);
         }
       }

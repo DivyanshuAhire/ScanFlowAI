@@ -408,6 +408,15 @@ export default function MapVisualizer({ companyId }: { companyId: string }) {
                       Assigned to Route: {typeof cluster.route_id === 'object' ? cluster.route_id.name || 'Active Route' : 'Active Route'}
                     </p>
                   )}
+                  {cluster.route_id && (
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Parent Node: <span className="font-semibold text-slate-700">{
+                        cluster.parent_cluster 
+                          ? (clusters.find(c => c._id.toString() === (cluster.parent_cluster?._id || cluster.parent_cluster).toString())?.name || 'HQ')
+                          : 'HQ (Root)'
+                      }</span>
+                    </p>
+                  )}
                   <p className="text-[10px] text-slate-400 mt-0.5">Radius: {radiusMeters / 1000}km threshold</p>
                 </div>
               </Popup>
