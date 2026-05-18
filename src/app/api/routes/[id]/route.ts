@@ -10,26 +10,27 @@ export async function PUT(
     await dbConnect();
     const { id } = await params;
     const data = await req.json();
-    const { name, clusterIds } = data;
+    const { name, clusterIds, root_cluster } = data;
 
-    // 1. Update the Route name and cluster sequence
-    const route = await Route.findByIdAndUpdate(id, { name, clusterIds }, { new: true });
+    // 1. Update the Route name, cluster sequence, and root_cluster endpoint
+    const route = await Route.findByIdAndUpdate(id, { name, clusterIds, root_cluster }, { new: true });
     if (!route) {
       return NextResponse.json({ error: 'Route not found' }, { status: 404 });
     }
 
-    // 2. Handle Cluster associations
-    if (clusterIds && Array.isArray(clusterIds)) {
-      // First, remove this route from all clusters currently assigned to it
+    // 2. Handle Cluster associations: if root_cluster is modified or manual clusterIds are provided, clear old associations first
+    if (root_cluster || (clusterIds && Array.isArray(clusterIds))) {
       await Cluster.updateMany(
         { routeGroupIds: id },
-        { $pull: { routeGroupIds: id } }
+        { $pull: { routeGroupIds: id }, $unset: { route_id: "" } }
       );
+    }
 
-      // Then, assign this route to the new list of clusters
+    if (clusterIds && Array.isArray(clusterIds)) {
+      // Assign this route to the new list of clusters
       await Cluster.updateMany(
         { _id: { $in: clusterIds } },
-        { $addToSet: { routeGroupIds: id } }
+        { $addToSet: { routeGroupIds: id }, $set: { route_id: id } }
       );
     }
 
@@ -53,7 +54,7 @@ export async function DELETE(
     // 2. Clear this route from all clusters
     await Cluster.updateMany(
       { routeGroupIds: id },
-      { $pull: { routeGroupIds: id } }
+      { $pull: { routeGroupIds: id }, $unset: { route_id: "" } }
     );
 
     return NextResponse.json({ message: 'Route deleted successfully' });

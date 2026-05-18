@@ -15,13 +15,31 @@ const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: numbe
   return R * c;
 };
 
-// Compute overlap percentage: check what % of path1 points are within 150m of any point in path2
-function pathOverlapPercentage(path1: [number, number][], path2: [number, number][]): number {
+// Compute overlap percentage: check what % of path1 points (outside the closer cluster's perimeter) are within 150m of any point in path2
+function pathOverlapPercentage(
+  path1: [number, number][], 
+  path2: [number, number][], 
+  clusterCentroid?: [number, number], 
+  radiusKm?: number
+): number {
   if (!path1 || path1.length === 0 || !path2 || path2.length === 0) return 0;
   
+  // Filter path1 points to only include those outside the cluster's perimeter/radius
+  let pointsToEvaluate = path1;
+  if (clusterCentroid && radiusKm) {
+    const outsidePoints = path1.filter(pt => {
+      const distToCenter = calculateDistance(pt[0], pt[1], clusterCentroid[0], clusterCentroid[1]);
+      return distToCenter > radiusKm;
+    });
+    // Fall back to original path if the filter leaves us with empty array
+    if (outsidePoints.length > 0) {
+      pointsToEvaluate = outsidePoints;
+    }
+  }
+
   let overlappingPoints = 0;
   
-  for (const pt1 of path1) {
+  for (const pt1 of pointsToEvaluate) {
     let minDistance = Infinity;
     for (const pt2 of path2) {
       const dist = calculateDistance(pt1[0], pt1[1], pt2[0], pt2[1]);
@@ -35,11 +53,11 @@ function pathOverlapPercentage(path1: [number, number][], path2: [number, number
     }
   }
   
-  return (overlappingPoints / path1.length) * 100;
+  return (overlappingPoints / pointsToEvaluate.length) * 100;
 }
 
 export class RouteGraphEngine {
-  async regenerateGraph(companyId: string) {
+  async regenerateGraph(companyId: string, forceReset = false) {
     // 1. Fetch Company details to find HQ Location
     const company = await Company.findById(companyId).lean() as any;
     if (!company || !company.hqLocation || !company.hqLocation.lat) {
@@ -99,24 +117,70 @@ export class RouteGraphEngine {
     // 3. Sort clusters by distance from HQ (farthest first)
     clustersWithPaths.sort((a, b) => b.distance - a.distance);
 
-    // Clean old routes in database
-    await Route.deleteMany({ companyId });
+    if (forceReset) {
+      // Completely wipe out all existing routes for this company
+      await Route.deleteMany({ companyId });
+      // Reset all clusters' route_id and routeGroupIds
+      await Cluster.updateMany({ companyId }, { $unset: { route_id: "" }, $set: { routeGroupIds: [] } });
+    } else {
+      // Clean only routes that were marked as deleted
+      await Route.deleteMany({ companyId, isDeleted: true });
+    }
+
+    // Load all active, existing routes
+    const existingRoutes = forceReset ? [] : await Route.find({ companyId, isDeleted: { $ne: true } });
+
+    // Reset all clusters' route_id for this company first
+    await Cluster.updateMany({ companyId }, { $unset: { route_id: "" } });
 
     // 4. Overlap Matching Loop: if a closer cluster tracks >= 80% of a farther cluster's route, merge it!
     const activeRoutes: Array<{ route: any, cluster: any, path: [number, number][], distance: number, travelTime: number, geometry: [number, number][] }> = [];
 
+    // Pre-populate with existing routes to preserve manual edits/endpoints/names
+    for (const route of existingRoutes) {
+      if (!route.root_cluster) continue;
+      
+      const item = clustersWithPaths.find(c => c.cluster._id.toString() === route.root_cluster!.toString());
+      if (item) {
+        // Assign the route ID to the root cluster
+        item.cluster.route_id = route._id;
+        await item.cluster.save();
+
+        activeRoutes.push({
+          route,
+          cluster: item.cluster,
+          path: item.geometry,
+          distance: item.distance,
+          travelTime: item.travelTime,
+          geometry: item.geometry
+        });
+      }
+    }
+
+    // Now, run the Overlap Matching Loop for clusters that do NOT belong to any active route yet!
     for (const item of clustersWithPaths) {
+      // If this cluster is already the root of an active route, skip it
+      if (activeRoutes.some(active => active.cluster._id.toString() === item.cluster._id.toString())) {
+        continue;
+      }
+
       let merged = false;
 
       for (const active of activeRoutes) {
-        // Check if the farther active path contains at least 80% of this closer item's path
-        const overlapPct = pathOverlapPercentage(item.geometry, active.path);
+        // Check if the farther active path contains at least 90% of this closer item's path (calculated up to cluster perimeter)
+        const radiusKm = item.cluster.type === 'PRIMARY' ? 2.0 : 1.0;
+        const overlapPct = pathOverlapPercentage(
+          item.geometry, 
+          active.path, 
+          [item.cluster.center_lat, item.cluster.center_lng], 
+          radiusKm
+        );
         
-        if (overlapPct >= 80) {
+        if (overlapPct >= 90) {
           item.cluster.route_id = active.route._id;
           await item.cluster.save();
           merged = true;
-          console.log(`➜ Emerge Merge: Cluster '${item.cluster.name}' (closer) is 80%+ overlapping with active route to '${active.cluster.name}' (farthest) - absorbed!`);
+          console.log(`➜ Emerge Merge: Cluster '${item.cluster.name}' (closer) is 90%+ overlapping with active route to '${active.cluster.name}' (farthest) - absorbed!`);
           break;
         }
       }
@@ -125,8 +189,9 @@ export class RouteGraphEngine {
         // Create a new independent Route with this cluster as the root/farthest endpoint
         const newRoute = await Route.create({
           companyId,
-          root_cluster: item.cluster._id
-        });
+          root_cluster: item.cluster._id,
+          name: `Route via ${item.cluster.name}` // initial default name
+        }) as any;
 
         item.cluster.route_id = newRoute._id;
         await item.cluster.save();

@@ -22,7 +22,7 @@ export const EditRouteModal = ({ isOpen, onClose, companyId, route, onSuccess }:
 
   useEffect(() => {
     if (isOpen && companyId && route) {
-      setName(route.name);
+      setName(route.name || '');
       // Fetch all clusters for the company
       axios.get(`/api/clusters?companyId=${companyId}`).then(res => {
         setClusters(res.data);
@@ -84,7 +84,7 @@ export const EditRouteModal = ({ isOpen, onClose, companyId, route, onSuccess }:
   };
 
   return (
-    <div className="fixed inset-0 z-[100] bg-slate-900/50 backdrop-blur-sm overflow-y-auto p-4 flex justify-center items-start lg:items-center">
+    <div className="fixed inset-0 z-[9999] bg-slate-900/50 backdrop-blur-sm overflow-y-auto p-4 flex justify-center items-start lg:items-center">
       <div className="bg-white w-full max-w-xl rounded-3xl shadow-2xl animate-in fade-in zoom-in duration-200 my-8">
         <div className="p-6 border-b border-slate-100 flex items-center justify-between">
           <div>

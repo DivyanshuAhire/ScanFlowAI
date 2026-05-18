@@ -302,7 +302,9 @@ export const CreateAppointmentModal = ({ isOpen, onClose, companyId, clinicId, o
                   const isSelected = formData.timeSlot === slot.time;
                   let slotStyle = "bg-white border-slate-200 text-slate-600 hover:border-slate-400 hover:text-slate-900";
                   
-                  if (isSelected) {
+                  if (!slot.available) {
+                    slotStyle = "bg-slate-50 border-slate-100 text-slate-300 cursor-not-allowed line-through hover:border-slate-100 hover:text-slate-300";
+                  } else if (isSelected) {
                     if (slot.type === 'preferred') {
                       slotStyle = "bg-emerald-600 border-emerald-600 text-white shadow-lg shadow-emerald-100";
                     } else {

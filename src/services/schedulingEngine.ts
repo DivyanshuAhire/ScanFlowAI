@@ -162,6 +162,21 @@ export class SchedulingEngineService {
       const [candH, candM] = hour.split(':').map(Number);
       const candidateMinutes = candH * 60 + candM;
 
+      // Check if this slot is already booked for any clinic on the same route or cluster!
+      const isOccupied = dayAppointments.some(app => {
+        const appClinic = app.clinicId as any;
+        if (!appClinic || !appClinic.cluster_id) return false;
+        
+        // Resolve cluster from pre-loaded allClusters list to safely get its route_id
+        const appCluster = allClusters.find(c => c._id.toString() === appClinic.cluster_id.toString());
+        if (!appCluster) return false;
+
+        const sameRoute = targetCluster.route_id && 
+                          appCluster.route_id?.toString() === targetCluster.route_id.toString();
+        const sameCluster = appCluster._id.toString() === targetCluster._id.toString();
+        return app.timeSlot === hour && (sameRoute || sameCluster);
+      });
+
       // Find existing appointments that occur before this slot
       const earlierAppointments = dayAppointments.filter(app => {
         const appHour = parseInt(app.timeSlot.split(':')[0], 10);
@@ -220,17 +235,32 @@ export class SchedulingEngineService {
         }
       }
 
-      if (isReachable && !causesBacktracking) {
+      if (isReachable && !causesBacktracking && !isOccupied) {
         closestHour = hour;
-        break; // First reachable, non-backtrack slot is our Best Slot!
+        break; // First reachable, non-backtrack, unoccupied slot is our Best Slot!
       }
     }
 
-    // Fallback: if no slot satisfies backtrack check, pick first reachable slot
+    // Fallback: if no slot satisfies backtrack check, pick first reachable, unoccupied slot
     if (!closestHour) {
       for (const hour of hours) {
         const [candH, candM] = hour.split(':').map(Number);
         const candidateMinutes = candH * 60 + candM;
+
+        // Check occupancy
+        const isOccupied = dayAppointments.some(app => {
+          const appClinic = app.clinicId as any;
+          if (!appClinic || !appClinic.cluster_id) return false;
+          
+          // Resolve cluster from pre-loaded allClusters list to safely get its route_id
+          const appCluster = allClusters.find(c => c._id.toString() === appClinic.cluster_id.toString());
+          if (!appCluster) return false;
+
+          const sameRoute = targetCluster.route_id && 
+                            appCluster.route_id?.toString() === targetCluster.route_id.toString();
+          const sameCluster = appCluster._id.toString() === targetCluster._id.toString();
+          return app.timeSlot === hour && (sameRoute || sameCluster);
+        });
 
         const earlierAppointments = dayAppointments.filter(app => {
           const appHour = parseInt(app.timeSlot.split(':')[0], 10);
@@ -256,7 +286,7 @@ export class SchedulingEngineService {
         const travelTimeMinutes = distance * 3;
         const reachableMinutes = startMinutes + travelTimeMinutes;
 
-        if (candidateMinutes >= reachableMinutes) {
+        if (candidateMinutes >= reachableMinutes && !isOccupied) {
           closestHour = hour;
           break;
         }
@@ -267,6 +297,21 @@ export class SchedulingEngineService {
     for (const hour of hours) {
       const [candH] = hour.split(':').map(Number);
       const isBest = hour === closestHour;
+
+      // Check occupancy for this slot to set final available state
+      const isOccupied = dayAppointments.some(app => {
+        const appClinic = app.clinicId as any;
+        if (!appClinic || !appClinic.cluster_id) return false;
+        
+        // Resolve cluster from pre-loaded allClusters list to safely get its route_id
+        const appCluster = allClusters.find(c => c._id.toString() === appClinic.cluster_id.toString());
+        if (!appCluster) return false;
+
+        const sameRoute = targetCluster.route_id && 
+                          appCluster.route_id?.toString() === targetCluster.route_id.toString();
+        const sameCluster = appCluster._id.toString() === targetCluster._id.toString();
+        return app.timeSlot === hour && (sameRoute || sameCluster);
+      });
 
       // Check backtracking to provide rich error tooltip if needed
       let causesBacktracking = false;
@@ -313,11 +358,11 @@ export class SchedulingEngineService {
 
       slots.push({
         time: hour,
-        available: true,
-        remaining: 1,
-        type,
-        label,
-        explanation
+        available: !isOccupied,
+        remaining: isOccupied ? 0 : 1,
+        type: isOccupied ? 'avoid' : type,
+        label: isOccupied ? 'Occupied ❌' : label,
+        explanation: isOccupied ? 'This time slot is already booked on this route.' : explanation
       });
     }
 
@@ -351,6 +396,17 @@ export class SchedulingEngineService {
     }).lean();
 
     if (technicians.length === 0) return 0;
+
+    // Load company for HQ coordinates (used as fallback for proximity checks)
+    const { Company } = await import('@/models');
+    const company = await Company.findById(companyId).lean() as any;
+    
+    let hqLat = 19.0760;
+    let hqLng = 72.8777;
+    if (company && company.hqLocation && company.hqLocation.lat) {
+      hqLat = company.hqLocation.lat;
+      hqLng = company.hqLocation.lng;
+    }
 
     // Resolve direction
     let routeDay = await RouteDay.findOne({
@@ -389,9 +445,51 @@ export class SchedulingEngineService {
     let assignedCount = 0;
     const routeGroups = Array.from(routeGroupsMap.values());
 
+    // Pre-populate already assigned technicians on this date to ensure they don't get double booked
+    const alreadyAssigned = await Appointment.find({
+      companyId,
+      appointmentDate: { $gte: startOfDay(date), $lte: endOfDay(date) },
+      employeeId: { $ne: null },
+      isDeleted: false
+    }).lean();
+
+    const assignedTechIds = new Set<string>(
+      alreadyAssigned.map(b => b.employeeId!.toString())
+    );
+
     for (let i = 0; i < routeGroups.length; i++) {
       const groupBookings = routeGroups[i];
-      const tech = technicians[i % technicians.length];
+      
+      // Proximity feasibility matching: find the first cluster of the route group
+      const firstBooking = groupBookings[0];
+      const firstClinic = firstBooking.clinicId as any;
+      const firstCluster = firstClinic?.cluster_id as any;
+
+      // Find available active technicians who are NOT yet assigned to any route today!
+      const availableTechs = technicians.filter(t => !assignedTechIds.has(t._id.toString()));
+
+      if (availableTechs.length === 0) {
+        console.warn(`No available technicians left to assign to route group index ${i}. Leaving remaining bookings unassigned.`);
+        continue;
+      }
+
+      // Sort available technicians by proximity to the first cluster in the route group!
+      let tech = availableTechs[0];
+      if (firstCluster) {
+        availableTechs.sort((a, b) => {
+          const latA = a.baseLocation?.lat || hqLat;
+          const lngA = a.baseLocation?.lng || hqLng;
+          const latB = b.baseLocation?.lat || hqLat;
+          const lngB = b.baseLocation?.lng || hqLng;
+
+          const distA = getDistance(latA, lngA, firstCluster.center_lat, firstCluster.center_lng);
+          const distB = getDistance(latB, lngB, firstCluster.center_lat, firstCluster.center_lng);
+          return distA - distB; // closest first
+        });
+        tech = availableTechs[0];
+      }
+
+      assignedTechIds.add(tech._id.toString());
 
       // Sort bookings chronologically inside the route to form a continuous progression
       groupBookings.sort((a, b) => a.timeSlot.localeCompare(b.timeSlot));
