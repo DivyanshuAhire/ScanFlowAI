@@ -5,6 +5,7 @@ import Employee from './Employee';
 import Appointment, { AppointmentStatus } from './Appointment';
 import Cluster from './Cluster';
 import Route from './Route';
+import RouteDay from './RouteDay';
 import ClusterDistanceMatrix from './ClusterDistanceMatrix';
 import OfficeTimings from './OfficeTimings';
 import Notification from './Notification';
@@ -21,6 +22,7 @@ export {
   AppointmentStatus,
   Cluster,
   Route,
+  RouteDay,
   ClusterDistanceMatrix,
   OfficeTimings,
   Notification,

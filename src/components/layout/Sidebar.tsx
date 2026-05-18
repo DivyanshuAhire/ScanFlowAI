@@ -24,11 +24,13 @@ const menuConfigs = {
   SUPER_ADMIN: [
     { name: 'Global Overview', icon: LayoutDashboard, href: '/superadmin/dashboard' },
     { name: 'Companies', icon: ShieldCheck, href: '/superadmin/companies' },
+    { name: 'Spatial Optimization', icon: MapPin, href: '/superadmin/clusters' },
     { name: 'System Logs', icon: Truck, href: '/superadmin/logs' },
   ],
   COMPANY_ADMIN: [
     { name: 'Appointments', icon: Calendar, href: '/company/appointments' },
     { name: 'Dashboard', icon: LayoutDashboard, href: '/company/dashboard' },
+    { name: 'Spatial Optimization', icon: MapPin, href: '/company/clusters' },
     { name: 'Clinics', icon: Hospital, href: '/company/clinics' },
     { name: 'Employees', icon: Users, href: '/company/employees' },
     { name: 'Settings', icon: Settings, href: '/company/settings' },

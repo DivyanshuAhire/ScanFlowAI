@@ -13,6 +13,7 @@ export enum AppointmentStatus {
 export interface IAppointment extends Document {
   clinicId: mongoose.Types.ObjectId;
   companyId: mongoose.Types.ObjectId;
+  clusterId?: mongoose.Types.ObjectId;
   employeeId?: mongoose.Types.ObjectId;
   appointmentDate: Date;
   timeSlot: string; // HH:mm
@@ -24,6 +25,12 @@ export interface IAppointment extends Document {
   isOverride: boolean;
   overrideReason?: string;
   isDeleted: boolean;
+  routeDirection?: 'OUTWARD' | 'INWARD';
+  routeSequencePosition?: number;
+  routeDayId?: mongoose.Types.ObjectId;
+  travelWeight?: number;
+  routeOrder?: number;
+  optimizationStatus?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -32,6 +39,7 @@ const AppointmentSchema: Schema = new Schema(
   {
     clinicId: { type: Schema.Types.ObjectId, ref: 'Clinic', required: true, index: true },
     companyId: { type: Schema.Types.ObjectId, ref: 'Company', required: true, index: true },
+    clusterId: { type: Schema.Types.ObjectId, ref: 'Cluster' },
     employeeId: { type: Schema.Types.ObjectId, ref: 'Employee', index: true },
     appointmentDate: { type: Date, required: true, index: true },
     timeSlot: { type: String, required: true },
@@ -43,6 +51,12 @@ const AppointmentSchema: Schema = new Schema(
     isOverride: { type: Boolean, default: false },
     overrideReason: { type: String },
     isDeleted: { type: Boolean, default: false },
+    routeDirection: { type: String, enum: ['OUTWARD', 'INWARD'] },
+    routeSequencePosition: { type: Number },
+    routeDayId: { type: Schema.Types.ObjectId, ref: 'RouteDay' },
+    travelWeight: { type: Number, default: 0 },
+    routeOrder: { type: Number },
+    optimizationStatus: { type: String, default: 'PENDING' },
   },
   { timestamps: true }
 );

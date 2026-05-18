@@ -29,17 +29,15 @@ export async function POST(req: Request) {
     await dbConnect();
     const data = await req.json();
     
-    const { schedulingEngineService } = await import('@/services/schedulingEngine');
-    
-    // 1. Create the appointment record
-    const appointment = await Appointment.create(data);
-    
-    // 2. Trigger Auto-Assignment Engine
-    try {
-      await schedulingEngineService.autoAssignEmployee(appointment._id as string);
-    } catch (assignError) {
-      console.error('Auto-assignment failed:', assignError);
+    // 1. Resolve clinic and associate the correct clusterId
+    const { Clinic } = await import('@/models');
+    const clinic = await Clinic.findById(data.clinicId).lean() as any;
+    if (clinic && clinic.cluster_id) {
+      data.clusterId = clinic.cluster_id;
     }
+    
+    // 2. Create the appointment record without assigning an employee
+    const appointment = await Appointment.create(data);
     
     return NextResponse.json(appointment, { status: 201 });
   } catch (error: any) {

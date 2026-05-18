@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { CompanySidebar } from '@/components/layout/CompanySidebar';
+import { Sidebar } from '@/components/layout/Sidebar';
 import { useUser } from '@/context/UserContext';
 import { useRouter } from 'next/navigation';
 import { Layers } from 'lucide-react';
@@ -17,8 +17,9 @@ const MapVisualizer = dynamic(() => import('@/components/MapVisualizer'), {
 });
 
 export default function CompanyClustersPage() {
-  const { user, companyId, loading: authLoading } = useUser();
+  const { user, loading: authLoading } = useUser();
   const router = useRouter();
+  const companyId = user?.companyId;
 
   useEffect(() => {
     if (authLoading) return;
@@ -38,7 +39,7 @@ export default function CompanyClustersPage() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <CompanySidebar />
+      <Sidebar />
       <main className="lg:ml-64 p-4 lg:p-8 pt-24 pb-[10vh]">
         <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-8">
           <div className="flex flex-col md:flex-row md:items-center gap-4 lg:gap-8">

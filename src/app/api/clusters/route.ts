@@ -12,6 +12,10 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'Company ID required' }, { status: 400 });
     }
 
+    // Auto-emerge and merge routes by OSRM road overlap before returning clusters
+    const { routeGraphEngine } = await import('@/services/routeGraphEngine');
+    await routeGraphEngine.regenerateGraph(companyId);
+
     const clusters = await Cluster.find({ 
       companyId, 
       isDeleted: { $ne: true } 

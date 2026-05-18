@@ -62,19 +62,12 @@ export class AutoClusterEngine {
       });
       await newCluster.save();
       clinic.cluster_id = newCluster._id;
-      
-      // Auto route generation root
-      const newRoute = new Route({
-        companyId,
-        root_cluster: newCluster._id
-      });
-      await newRoute.save();
-      
-      newCluster.route_id = newRoute._id;
-      await newCluster.save();
-      
       await clinic.save();
     }
+
+    // Automatically emerge/merge routes after adding any new cluster or clinic using the road-overlap engine
+    const { routeGraphEngine } = await import('./routeGraphEngine');
+    await routeGraphEngine.regenerateGraph(companyId);
   }
 
   async recalculateCentroid(clusterId: string) {

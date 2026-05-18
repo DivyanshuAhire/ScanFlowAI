@@ -134,7 +134,7 @@ export const CreateAppointmentModal = ({ isOpen, onClose, companyId, clinicId, o
     try {
       setLoading(true);
       await axios.post('/api/appointments', { ...formData, companyId });
-      toast.success('Appointment created and auto-assigned!');
+      toast.success('Appointment created successfully!');
       onSuccess();
       onClose();
     } catch (err: any) {
@@ -271,7 +271,7 @@ export const CreateAppointmentModal = ({ isOpen, onClose, companyId, clinicId, o
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <label className="text-sm font-bold text-slate-700 flex items-center gap-2">
-                <Clock className="w-4 h-4 text-slate-400" /> Available Time Slots
+                <Clock className="w-4 h-4 text-slate-400" /> Smart Route Slots
               </label>
               {slotsLoading && <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />}
             </div>
@@ -279,8 +279,8 @@ export const CreateAppointmentModal = ({ isOpen, onClose, companyId, clinicId, o
             {!showSlots ? (
               <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200">
                 <Clock className="w-8 h-8 text-slate-300 mx-auto mb-3" />
-                <p className="text-sm text-slate-600 font-bold mb-1">Check Capacity</p>
-                <p className="text-xs text-slate-500 mb-4">Calculate technician travel paths for this clinic.</p>
+                <p className="text-sm text-slate-600 font-bold mb-1">Check Route Continuity</p>
+                <p className="text-xs text-slate-500 mb-4">Suggest slot times based on active route flow and sequence.</p>
                 <button
                   type="button"
                   disabled={!formData.clinicId || slotsLoading}
@@ -292,53 +292,60 @@ export const CreateAppointmentModal = ({ isOpen, onClose, companyId, clinicId, o
                 </button>
               </div>
             ) : (
-              <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 gap-2 animate-in fade-in slide-in-from-top-2 duration-300">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 animate-in fade-in slide-in-from-top-2 duration-300">
                 {availableSlots.length === 0 && !slotsLoading && (
                   <div className="col-span-full p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200">
                     <p className="text-sm text-slate-500 font-medium">No slots available for this date.</p>
                   </div>
                 )}
-                {availableSlots.map((slot: any) => (
-                  <button
-                    key={slot.time}
-                    type="button"
-                    disabled={!slot.available}
-                    onClick={() => setFormData({ ...formData, timeSlot: slot.time })}
-                    className={cn(
-                      "group relative py-2 rounded-lg text-xs font-bold border transition-all",
-                      !slot.available 
-                        ? "bg-slate-50 border-slate-100 text-slate-300 cursor-not-allowed"
-                        : formData.timeSlot === slot.time
-                        ? "bg-blue-600 border-blue-600 text-white shadow-lg shadow-blue-200"
-                        : slot.isRecommended
-                        ? "bg-green-100 border-green-500 text-green-700 hover:bg-green-200 hover:text-green-800"
-                        : "bg-white border-slate-200 text-slate-600 hover:border-blue-400 hover:text-blue-600"
-                    )}
-                  >
-                    {slot.time}
-                    {slot.isRecommended && (
-                      <span className="absolute -top-2 -right-2 bg-green-500 text-white text-[8px] font-black px-1.5 py-0.5 rounded shadow-sm">
-                        BEST
-                      </span>
-                    )}
-                    {slot.available && !slot.isRecommended && (
-                      <span className={cn(
-                        "absolute -top-1 -right-1 w-2 h-2 rounded-full border border-white",
-                        slot.remaining > 1 ? "bg-emerald-500" : "bg-amber-500"
-                      )}></span>
-                    )}
-                    {/* Tooltip-like capacity info */}
-                    <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 hidden group-hover:block z-20 pointer-events-none">
-                      <div className="bg-slate-800 text-white text-[10px] px-2 py-1 rounded whitespace-nowrap">
-                        {slot.available ? (slot.isRecommended ? 'Optimal route match' : `${slot.remaining} techs free`) : (slot.reason || 'Fully booked')}
+                {availableSlots.map((slot: any) => {
+                  const isSelected = formData.timeSlot === slot.time;
+                  let slotStyle = "bg-white border-slate-200 text-slate-600 hover:border-slate-400 hover:text-slate-900";
+                  
+                  if (isSelected) {
+                    if (slot.type === 'preferred') {
+                      slotStyle = "bg-emerald-600 border-emerald-600 text-white shadow-lg shadow-emerald-100";
+                    } else {
+                      slotStyle = "bg-slate-900 border-slate-900 text-white shadow-lg shadow-slate-100";
+                    }
+                  } else {
+                    if (slot.type === 'preferred') {
+                      slotStyle = "bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100 hover:border-emerald-300";
+                    } else {
+                      slotStyle = "bg-white border-slate-200 text-slate-500 hover:border-slate-300 hover:text-slate-800";
+                    }
+                  }
+
+                  return (
+                    <button
+                      key={slot.time}
+                      type="button"
+                      disabled={!slot.available}
+                      onClick={() => setFormData({ ...formData, timeSlot: slot.time })}
+                      className={cn(
+                        "group relative py-3 px-2 rounded-xl text-xs font-bold border transition-all flex flex-col items-center justify-center min-h-[50px] cursor-pointer",
+                        slotStyle
+                      )}
+                    >
+                      <span className="text-sm font-black">{slot.time}</span>
+                      {slot.type === 'preferred' && (
+                        <span className="text-[8px] font-extrabold uppercase mt-0.5 tracking-wider">
+                          Best Slot ⭐
+                        </span>
+                      )}
+                      
+                      {/* Tooltip containing explanation */}
+                      <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 hidden group-hover:block z-[200] pointer-events-none">
+                        <div className="bg-slate-900/95 backdrop-blur text-white text-[10px] px-3 py-1.5 rounded-xl whitespace-nowrap shadow-xl border border-slate-800 font-medium">
+                          {slot.explanation || 'Route sequence aligned.'}
+                        </div>
                       </div>
-                    </div>
-                  </button>
-                ))}
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>
-
 
           </div>
 
@@ -355,7 +362,7 @@ export const CreateAppointmentModal = ({ isOpen, onClose, companyId, clinicId, o
               disabled={loading || slotsLoading || !formData.timeSlot}
               className="flex-[2] py-3 bg-slate-900 text-white px-8 rounded-xl font-bold hover:bg-slate-800 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
             >
-              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Confirm & Assign'}
+              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Confirm Booking'}
             </button>
           </div>
           <div className="h-24 lg:hidden" />

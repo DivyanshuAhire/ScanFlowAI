@@ -174,26 +174,8 @@ export const ManageCompanyModal = ({ isOpen, onClose, company }: any) => {
                     <MapPin className="w-6 h-6" />
                   </div>
                   <div>
-                    <h4 className="font-extrabold text-slate-900 group-hover:text-indigo-600 transition-colors">Geospatial Clusters</h4>
-                    <p className="text-xs text-slate-500 font-medium leading-relaxed mt-0.5">Optimize angular layouts, node distances and coordinate offsets.</p>
-                  </div>
-                </div>
-              </div>
-
-              <div 
-                onClick={() => {
-                  onClose();
-                  router.push(`/superadmin/routes?companyId=${company._id}`);
-                }}
-                className="p-5 bg-white border border-slate-200 rounded-3xl flex items-center justify-between hover:border-emerald-500 hover:shadow-lg transition-all cursor-pointer group"
-              >
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
-                    <Truck className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <h4 className="font-extrabold text-slate-900 group-hover:text-emerald-600 transition-colors">Route Optimization</h4>
-                    <p className="text-xs text-slate-500 font-medium leading-relaxed mt-0.5">Define active paths, sequence stops and verify operations.</p>
+                    <h4 className="font-extrabold text-slate-900 group-hover:text-indigo-600 transition-colors">Spatial & Route Optimization</h4>
+                    <p className="text-xs text-slate-500 font-medium leading-relaxed mt-0.5">Manage geospatial clusters, active paths, sequence stops, and operational boundaries.</p>
                   </div>
                 </div>
               </div>

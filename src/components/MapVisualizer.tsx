@@ -15,15 +15,6 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 });
 
-const clinicIcon = new L.Icon({
-  iconUrl: 'https://cdn.rawgit.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-  shadowSize: [41, 41]
-});
-
 const hqIcon = new L.Icon({
   iconUrl: 'https://cdn.rawgit.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
@@ -33,6 +24,73 @@ const hqIcon = new L.Icon({
   shadowSize: [41, 41]
 });
 
+const clinicIcons: Record<string, L.Icon> = {
+  blue: new L.Icon({
+    iconUrl: 'https://cdn.rawgit.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
+    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+    shadowSize: [41, 41]
+  }),
+  green: new L.Icon({
+    iconUrl: 'https://cdn.rawgit.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
+    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+    shadowSize: [41, 41]
+  }),
+  orange: new L.Icon({
+    iconUrl: 'https://cdn.rawgit.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-orange.png',
+    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+    shadowSize: [41, 41]
+  }),
+  yellow: new L.Icon({
+    iconUrl: 'https://cdn.rawgit.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-yellow.png',
+    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+    shadowSize: [41, 41]
+  }),
+  violet: new L.Icon({
+    iconUrl: 'https://cdn.rawgit.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-violet.png',
+    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+    shadowSize: [41, 41]
+  }),
+  gold: new L.Icon({
+    iconUrl: 'https://cdn.rawgit.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-gold.png',
+    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+    shadowSize: [41, 41]
+  }),
+  red: new L.Icon({
+    iconUrl: 'https://cdn.rawgit.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
+    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+    shadowSize: [41, 41]
+  }),
+  grey: new L.Icon({
+    iconUrl: 'https://cdn.rawgit.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-grey.png',
+    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+    shadowSize: [41, 41]
+  })
+};
+
 export default function MapVisualizer({ companyId }: { companyId: string }) {
   const [clinics, setClinics] = useState<any[]>([]);
   const [clusters, setClusters] = useState<any[]>([]);
@@ -41,28 +99,74 @@ export default function MapVisualizer({ companyId }: { companyId: string }) {
   const [company, setCompany] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
+  // Dynamic route colors and markers setup
+  const ROUTE_STYLES = [
+    { color: '#3b82f6', marker: 'blue' },     // Blue
+    { color: '#10b981', marker: 'green' },    // Green
+    { color: '#f97316', marker: 'orange' },   // Orange
+    { color: '#eab308', marker: 'yellow' },   // Yellow
+    { color: '#8b5cf6', marker: 'violet' },   // Violet
+    { color: '#d97706', marker: 'gold' },     // Gold
+    { color: '#ef4444', marker: 'red' },      // Red
+    { color: '#64748b', marker: 'grey' }      // Grey
+  ];
+
+  const routeColorMap: Record<string, string> = {};
+  const routeMarkerMap: Record<string, string> = {};
+
+  routes.forEach((r: any, idx: number) => {
+    const style = ROUTE_STYLES[idx % ROUTE_STYLES.length];
+    routeColorMap[r._id.toString()] = style.color;
+    routeMarkerMap[r._id.toString()] = style.marker;
+  });
+
+  const getRouteId = (cluster: any) => {
+    if (!cluster || !cluster.route_id) return null;
+    return typeof cluster.route_id === 'object' 
+      ? cluster.route_id._id?.toString() 
+      : cluster.route_id.toString();
+  };
+
+  const getEdgeColor = (edge: any) => {
+    let routeId: string | null = null;
+    if (edge.from_cluster.toString() === companyId.toString()) {
+      const c2 = clusters.find(c => c._id.toString() === edge.to_cluster.toString());
+      routeId = getRouteId(c2);
+    } else {
+      const c1 = clusters.find(c => c._id.toString() === edge.from_cluster.toString());
+      const c2 = clusters.find(c => c._id.toString() === edge.to_cluster.toString());
+      routeId = getRouteId(c1) || getRouteId(c2);
+    }
+
+    if (routeId && routeColorMap[routeId]) {
+      return routeColorMap[routeId];
+    }
+    return edge.from_cluster.toString() === companyId.toString() ? "#ef4444" : "#6366f1";
+  };
+
   useEffect(() => {
     if (!companyId) return;
 
     const fetchData = async () => {
       try {
         setLoading(true);
-        // We will fetch clinics, clusters, routes, companies, and cluster edges
-        const [clinicsRes, clustersRes, routesRes, companiesRes] = await Promise.all([
+        // Fetch clusters sequentially first to trigger backend route Graph regeneration and merging
+        const clustersRes = await axios.get(`/api/clusters?companyId=${companyId}`);
+        setClusters(clustersRes.data);
+
+        // Fetch remaining data only after routeGraphEngine has finished regeneration
+        const [clinicsRes, routesRes, companiesRes] = await Promise.all([
           axios.get(`/api/clinics?companyId=${companyId}`),
-          axios.get(`/api/clusters?companyId=${companyId}`),
           axios.get(`/api/routes?companyId=${companyId}`),
           axios.get('/api/companies'),
         ]);
         
         setClinics(clinicsRes.data);
-        setClusters(clustersRes.data);
         setRoutes(routesRes.data);
 
         const currentCompany = companiesRes.data.find((c: any) => c._id === companyId);
         setCompany(currentCompany);
 
-        // Fetch edges for graph visualization
         try {
           const edgesRes = await axios.get(`/api/clusters/edges?companyId=${companyId}`);
           setEdges(edgesRes.data);
@@ -88,7 +192,6 @@ export default function MapVisualizer({ companyId }: { companyId: string }) {
     );
   }
 
-  // Calculate default center (HQ Location takes precedence, then first clinic)
   let defaultCenter: [number, number] = [19.0760, 72.8777];
   if (company && company.hqLocation && company.hqLocation.lat) {
     defaultCenter = [company.hqLocation.lat, company.hqLocation.lng];
@@ -130,12 +233,16 @@ export default function MapVisualizer({ companyId }: { companyId: string }) {
           </Marker>
         )}
 
-        {/* Render Cluster Edges (Graph Route Lines) */}
-        {edges.map((edge: any) => {
+        {/* Render Cluster Edges (Graph Route Lines color-coded by Route ID) */}
+        {edges.filter((edge: any, index: number, self: any[]) => {
+          return self.findIndex((e: any) => 
+            (e.from_cluster.toString() === edge.from_cluster.toString() && e.to_cluster.toString() === edge.to_cluster.toString()) ||
+            (e.from_cluster.toString() === edge.to_cluster.toString() && e.to_cluster.toString() === edge.from_cluster.toString())
+          ) === index;
+        }).map((edge: any) => {
           let startPos: [number, number] | null = null;
           let endPos: [number, number] | null = null;
 
-          // Determine start position (HQ or Cluster A)
           if (edge.from_cluster.toString() === companyId.toString() && company && company.hqLocation) {
             startPos = [company.hqLocation.lat, company.hqLocation.lng];
           } else {
@@ -143,7 +250,6 @@ export default function MapVisualizer({ companyId }: { companyId: string }) {
             if (c1) startPos = [c1.center_lat, c1.center_lng];
           }
 
-          // Determine end position (Cluster B)
           const c2 = clusters.find(c => c._id.toString() === edge.to_cluster.toString());
           if (c2) endPos = [c2.center_lat, c2.center_lng];
 
@@ -152,11 +258,13 @@ export default function MapVisualizer({ companyId }: { companyId: string }) {
               ? edge.geometry 
               : [startPos, endPos];
             
+            const edgeColor = getEdgeColor(edge);
+            
             return (
               <Polyline 
                 key={edge._id} 
                 positions={pathPositions}
-                color={edge.from_cluster.toString() === companyId.toString() ? "#ef4444" : "#6366f1"} // Red from HQ, Indigo between clusters
+                color={edgeColor}
                 weight={edge.from_cluster.toString() === companyId.toString() ? 5 : 4}
                 opacity={0.8}
                 dashArray={edge.geometry ? undefined : "5, 10"}
@@ -166,20 +274,25 @@ export default function MapVisualizer({ companyId }: { companyId: string }) {
           return null;
         })}
 
-        {/* Render Cluster Centroids (using Circle for fixed geographical scale) */}
+        {/* Render Cluster Centroids (using Circle, color-coded by Route ID) */}
         {clusters.map((cluster: any) => {
           if (!cluster.center_lat || !cluster.center_lng) return null;
-          // Set circle radius based on 2km (primary) or 1km (subcluster) geographical bounds in meters
           const radiusMeters = cluster.type === 'PRIMARY' ? 2000 : 1000;
+          
+          const cRouteId = getRouteId(cluster);
+          const circleColor = cRouteId && routeColorMap[cRouteId]
+            ? routeColorMap[cRouteId]
+            : (cluster.type === 'PRIMARY' ? '#3b82f6' : cluster.type === 'SUBCLUSTER' ? '#10b981' : '#f59e0b');
+
           return (
             <Circle
               key={cluster._id}
               center={[cluster.center_lat, cluster.center_lng]}
               radius={radiusMeters}
               pathOptions={{
-                color: cluster.type === 'PRIMARY' ? '#3b82f6' : cluster.type === 'SUBCLUSTER' ? '#10b981' : '#f59e0b',
-                fillColor: cluster.type === 'PRIMARY' ? '#3b82f6' : cluster.type === 'SUBCLUSTER' ? '#10b981' : '#f59e0b',
-                fillOpacity: 0.1,
+                color: circleColor,
+                fillColor: circleColor,
+                fillOpacity: 0.08,
                 weight: 2
               }}
             >
@@ -190,6 +303,11 @@ export default function MapVisualizer({ companyId }: { companyId: string }) {
                     {cluster.name || 'Cluster'}
                   </h4>
                   <p className="text-xs text-slate-500 mt-1">Type: {cluster.type}</p>
+                  {cluster.route_id && (
+                    <p className="text-xs font-bold text-slate-600 mt-1">
+                      Assigned to Route: {typeof cluster.route_id === 'object' ? cluster.route_id.name || 'Active Route' : 'Active Route'}
+                    </p>
+                  )}
                   <p className="text-[10px] text-slate-400 mt-0.5">Radius: {radiusMeters / 1000}km threshold</p>
                 </div>
               </Popup>
@@ -197,16 +315,19 @@ export default function MapVisualizer({ companyId }: { companyId: string }) {
           );
         })}
 
-        {/* Render Clinics */}
+        {/* Render Clinics (Color-coded by Route ID) */}
         {clinics.map((clinic: any) => {
           if (!clinic.lat || !clinic.lng) return null;
           const assignedCluster = clusters.find(c => c._id.toString() === (clinic.cluster_id || clinic.cluster_id?._id || '').toString());
+          const routeId = getRouteId(assignedCluster);
+          const markerColor = routeId ? routeMarkerMap[routeId] : 'blue';
+          const iconToUse = clinicIcons[markerColor] || clinicIcons.blue;
           
           return (
             <Marker 
               key={clinic._id} 
               position={[clinic.lat, clinic.lng]}
-              icon={clinicIcon}
+              icon={iconToUse}
             >
               <Popup>
                 <div className="p-2 min-w-[200px]">
@@ -219,6 +340,12 @@ export default function MapVisualizer({ companyId }: { companyId: string }) {
                       <Layers className="w-3.5 h-3.5 text-slate-400" />
                       {assignedCluster ? assignedCluster.name : 'No Cluster'}
                     </p>
+                    {assignedCluster && assignedCluster.route_id && (
+                      <p className="flex items-center gap-2 text-slate-600 text-xs font-bold">
+                        <Truck className="w-3.5 h-3.5 text-slate-400" />
+                        On Route Style: <span className="capitalize">{markerColor}</span>
+                      </p>
+                    )}
                     <p className="flex items-center gap-2 text-slate-600 text-xs">
                       <MapPin className="w-3.5 h-3.5 text-slate-400" />
                       {clinic.address}
@@ -230,6 +357,39 @@ export default function MapVisualizer({ companyId }: { companyId: string }) {
           );
         })}
       </MapContainer>
+
+      {/* Floating Route Legend (Premium Glassmorphism Overlay) */}
+      {routes.length > 0 && (
+        <div className="absolute bottom-6 right-6 bg-white/90 backdrop-blur-md px-5 py-4 rounded-2xl shadow-2xl z-[1000] border border-slate-100/50 max-w-[280px] max-h-[300px] overflow-y-auto animate-in fade-in slide-in-from-bottom-4 duration-300">
+          <h5 className="text-[10px] font-black uppercase text-slate-400 tracking-wider mb-3">Active Routes Legend</h5>
+          <div className="space-y-3">
+            {routes.map((route: any, idx: number) => {
+              const rootCluster = clusters.find(c => c._id.toString() === (route.root_cluster?._id || route.root_cluster || '').toString());
+              const routeName = route.name || (rootCluster ? `Route via ${rootCluster.name}` : `Route ${route._id.toString().substring(18).toUpperCase()}`);
+              const style = ROUTE_STYLES[idx % ROUTE_STYLES.length];
+              
+              return (
+                <div key={route._id} className="flex items-start gap-2.5">
+                  <span 
+                    className="w-3 h-3 rounded-full border-2 border-white shadow-sm mt-0.5 shrink-0" 
+                    style={{ backgroundColor: style.color }}
+                  />
+                  <div className="flex flex-col">
+                    <span className="text-xs font-bold text-slate-800 leading-snug">
+                      {routeName}
+                    </span>
+                    {rootCluster && (
+                      <span className="text-[9px] text-slate-500 font-medium mt-0.5">
+                        Base HQ → {rootCluster.name}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
