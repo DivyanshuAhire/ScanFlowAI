@@ -201,7 +201,7 @@ export default function AdminMapPage() {
           <div className="space-y-1">
             <span className="font-extrabold uppercase tracking-wide block">Map Instructions</span>
             <p>1. Ensure you click <span className="font-semibold">Set HQ</span> first and drop a pin to calibrate the route engine.</p>
-            <p className="mt-1">2. Circular rings represent <span className="font-semibold">3km cluster centroids</span>, concentric dual rings are <span className="font-semibold">shared hubs</span>.</p>
+            <p className="mt-1">2. Circular rings represent <span className="font-semibold">2km cluster centroids</span>, concentric dual rings are <span className="font-semibold">shared hubs</span>.</p>
           </div>
         </div>
       </div>

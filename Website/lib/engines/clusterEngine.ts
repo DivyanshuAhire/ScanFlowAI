@@ -112,19 +112,19 @@ export async function assignClinicToClusterAndRoute(
 
   let finalCluster: ICluster;
 
-  if (nearestCluster && minRoadDistance <= 3) {
-    // We found a matching cluster within 3km!
+  if (nearestCluster && minRoadDistance <= 4) {
+    // We found a matching cluster within 4km (2km parent radius + 2km perimeter gap)!
     if (minRoadDistance <= 2) {
-      // Clinic is close to centroid, assign directly to this main cluster
+      // Clinic is contained within the parent cluster radius (<= 2km), assign directly to main cluster
       finalCluster = nearestCluster;
     } else {
-      // Clinic is between 2-3km from centroid, create a SubCluster
+      // Clinic is between 2-4km from centroid (1-2km from perimeter), create a SubCluster!
       const subClusterCount = await Cluster.countDocuments({ parentCluster: nearestCluster._id } as any);
       const newSubCluster = await Cluster.create({
         name: `${nearestCluster.name}-Sub${subClusterCount + 1}`,
         centroidLat: lat,
         centroidLng: lng,
-        radiusKm: 2,
+        radiusKm: 1, // Subcluster radius is 1km
         parentCluster: nearestCluster._id as any,
         routeIds: nearestCluster.routeIds as any, // Inherits parent's routes
         distanceFromHqKm: clinicDistanceFromHq,
@@ -132,13 +132,13 @@ export async function assignClinicToClusterAndRoute(
       finalCluster = newSubCluster;
     }
   } else {
-    // No cluster within 3km, create a new main Cluster!
+    // No cluster within 4km, create a new main Cluster!
     const mainClusterCount = await Cluster.countDocuments({ parentCluster: null } as any);
     const newCluster = await Cluster.create({
       name: `C${mainClusterCount + 1}`,
       centroidLat: lat,
       centroidLng: lng,
-      radiusKm: 3,
+      radiusKm: 2, // Main cluster radius is 2km
       parentCluster: null,
       routeIds: [],
       distanceFromHqKm: clinicDistanceFromHq,
@@ -178,10 +178,10 @@ export async function assignClinicToClusterAndRoute(
     if (overlappingRoute) {
       // Assign to existing route
       assignedRouteId = overlappingRoute._id.toString();
-      
+
       // Update Route's cluster list
       overlappingRoute.clusterIds.push(targetClusterIdForRoute as any);
-      
+
       // Dynamic Path Extension: If the new clinic is further along the same path, 
       // extend the route's path to cover the new clinic's full coordinates and distance!
       if (clinicDistanceFromHq > (overlappingRoute.totalDistanceKm || 0)) {
@@ -199,12 +199,12 @@ export async function assignClinicToClusterAndRoute(
       if (!clusterToUpdate.routeIds.includes(overlappingRoute._id as any)) {
         clusterToUpdate.routeIds.push(overlappingRoute._id as any);
       }
-      
+
       // If shared by multiple routes, set shared hub flag
       if (clusterToUpdate.routeIds.length > 1) {
         clusterToUpdate.isSharedHub = true;
       }
-      
+
       // Update order index
       clusterToUpdate.routeOrderIndex = routeClusters.findIndex(c => c._id.toString() === targetClusterIdForRoute.toString()) + 1;
       await clusterToUpdate.save();
@@ -218,7 +218,7 @@ export async function assignClinicToClusterAndRoute(
       // Create a new Route!
       const routeCount = await Route.countDocuments();
       const color = ROUTE_COLORS[routeCount % ROUTE_COLORS.length];
-      
+
       const newRoute = (await Route.create({
         name: `Route ${routeCount + 1}`,
         color,

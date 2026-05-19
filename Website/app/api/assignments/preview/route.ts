@@ -3,7 +3,7 @@ import { connectToDatabase } from '@/lib/db/mongoose';
 import { computeDailyAssignments } from '@/lib/engines/assignmentEngine';
 import { withAuth, AuthenticatedRequest } from '@/lib/auth/middleware';
 
-export const POST = withAuth(async (req: AuthenticatedRequest) => {
+const previewHandler = async (req: AuthenticatedRequest) => {
   try {
     await connectToDatabase();
     const { searchParams } = new URL(req.url);
@@ -23,4 +23,7 @@ export const POST = withAuth(async (req: AuthenticatedRequest) => {
     console.error('Assignment Preview API error:', error);
     return NextResponse.json({ error: error.message || 'Internal Server Error' }, { status: 500 });
   }
-}, ['ADMIN', 'COMPANY_OPERATOR']);
+};
+
+export const POST = withAuth(previewHandler, ['ADMIN', 'COMPANY_OPERATOR']);
+export const GET = withAuth(previewHandler, ['ADMIN', 'COMPANY_OPERATOR']);
