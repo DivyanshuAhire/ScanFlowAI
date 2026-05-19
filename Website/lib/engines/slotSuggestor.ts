@@ -35,7 +35,9 @@ export function minutesToTime(mins: number): string {
 
 export function roundUpToNextSlot(mins: number): string | null {
   for (const slot of ALL_SLOTS) {
-    if (timeToMinutes(slot) >= mins) {
+    const slotMins = timeToMinutes(slot);
+    // Add a 15-minute lateness grace period
+    if (slotMins + 15 >= mins) {
       return slot;
     }
   }
