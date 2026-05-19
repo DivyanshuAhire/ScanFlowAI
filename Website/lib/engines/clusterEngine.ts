@@ -35,7 +35,7 @@ export function haversineDistanceMeters(lat1: number, lng1: number, lat2: number
 }
 
 // Helper: Calculate overlap between new clinic's path and existing route path
-// Returns percentage of coordinates in path1 that are within 50m of any coordinate in path2
+// Returns percentage of coordinates in path1 that are within 250m of any coordinate in path2
 export function calculateRouteOverlap(path1: any, path2: any): number {
   if (!path1?.coordinates || !path2?.coordinates || path1.coordinates.length === 0 || path2.coordinates.length === 0) {
     return 0;
@@ -55,8 +55,8 @@ export function calculateRouteOverlap(path1: any, path2: any): number {
       const lng2 = coord2[0];
       const lat2 = coord2[1];
 
-      // Check if distance is <= 50 meters
-      if (haversineDistanceMeters(lat1, lng1, lat2, lng2) <= 50) {
+      // Check if distance is <= 250 meters (handles sparse OSRM nodes and GPS variations)
+      if (haversineDistanceMeters(lat1, lng1, lat2, lng2) <= 250) {
         isShared = true;
         break;
       }
@@ -67,7 +67,9 @@ export function calculateRouteOverlap(path1: any, path2: any): number {
     }
   }
 
-  return (sharedCount / coords1.length) * 100;
+  // Use the shorter path as denominator to correctly match subsets/extensions
+  const shorterLength = Math.min(coords1.length, coords2.length);
+  return (sharedCount / shorterLength) * 100;
 }
 
 export async function assignClinicToClusterAndRoute(
@@ -110,13 +112,13 @@ export async function assignClinicToClusterAndRoute(
 
   let finalCluster: ICluster;
 
-  if (nearestCluster && minRoadDistance <= 5) {
-    // We found a matching cluster within 5km!
+  if (nearestCluster && minRoadDistance <= 3) {
+    // We found a matching cluster within 3km!
     if (minRoadDistance <= 2) {
       // Clinic is close to centroid, assign directly to this main cluster
       finalCluster = nearestCluster;
     } else {
-      // Clinic is between 2-5km from centroid, create a SubCluster
+      // Clinic is between 2-3km from centroid, create a SubCluster
       const subClusterCount = await Cluster.countDocuments({ parentCluster: nearestCluster._id } as any);
       const newSubCluster = await Cluster.create({
         name: `${nearestCluster.name}-Sub${subClusterCount + 1}`,
@@ -130,13 +132,13 @@ export async function assignClinicToClusterAndRoute(
       finalCluster = newSubCluster;
     }
   } else {
-    // No cluster within 5km, create a new main Cluster!
+    // No cluster within 3km, create a new main Cluster!
     const mainClusterCount = await Cluster.countDocuments({ parentCluster: null } as any);
     const newCluster = await Cluster.create({
       name: `C${mainClusterCount + 1}`,
       centroidLat: lat,
       centroidLng: lng,
-      radiusKm: 5,
+      radiusKm: 3,
       parentCluster: null,
       routeIds: [],
       distanceFromHqKm: clinicDistanceFromHq,
@@ -167,7 +169,7 @@ export async function assignClinicToClusterAndRoute(
 
     for (const route of allRoutes) {
       const overlapPercent = calculateRouteOverlap(clinicPathFromHq, route.pathGeoJSON);
-      if (overlapPercent >= 90 && overlapPercent > maxOverlap) {
+      if (overlapPercent >= 75 && overlapPercent > maxOverlap) {
         maxOverlap = overlapPercent;
         overlappingRoute = route;
       }
@@ -180,6 +182,13 @@ export async function assignClinicToClusterAndRoute(
       // Update Route's cluster list
       overlappingRoute.clusterIds.push(targetClusterIdForRoute as any);
       
+      // Dynamic Path Extension: If the new clinic is further along the same path, 
+      // extend the route's path to cover the new clinic's full coordinates and distance!
+      if (clinicDistanceFromHq > (overlappingRoute.totalDistanceKm || 0)) {
+        overlappingRoute.pathGeoJSON = clinicPathFromHq;
+        overlappingRoute.totalDistanceKm = clinicDistanceFromHq;
+      }
+
       // Sort Route clusters by distanceFromHqKm ascending
       const routeClusters = await Cluster.find({ _id: { $in: overlappingRoute.clusterIds } } as any);
       routeClusters.sort((a, b) => (a.distanceFromHqKm || 0) - (b.distanceFromHqKm || 0));
