@@ -14,6 +14,7 @@ interface ScanFlowMapProps {
   interactive?: boolean;
   onMapClick?: (lat: number, lng: number) => void;
   highlightClusterId?: string;
+  selectedRouteId?: string | null;
   hqLocation?: { lat: number; lng: number } | null;
   routesData?: any[];
   clustersData?: any[];
@@ -39,10 +40,10 @@ const createHQIcon = () => L.divIcon({
 });
 
 // 2. Clinic Pin
-const createClinicIcon = (color: string = '#64748b') => L.divIcon({
+const createClinicIcon = (color: string = '#64748b', opacity: number = 1.0) => L.divIcon({
   className: 'custom-clinic-marker',
   html: `
-    <div style="display: flex; justify-content: center; align-items: center; width: 22px; height: 22px; background: white; border: 2.5px solid ${color}; border-radius: 50%; box-shadow: 0 2px 6px rgba(0,0,0,0.15); transform: translateY(-2px);">
+    <div style="display: flex; justify-content: center; align-items: center; width: 22px; height: 22px; background: white; border: 2.5px solid ${color}; border-radius: 50%; box-shadow: 0 2px 6px rgba(0,0,0,0.15); transform: translateY(-2px); opacity: ${opacity}; transition: opacity 0.2s;">
       <div style="width: 7px; height: 7px; background: ${color}; border-radius: 50%;"></div>
     </div>
   `,
@@ -51,13 +52,13 @@ const createClinicIcon = (color: string = '#64748b') => L.divIcon({
 });
 
 // 3. Cluster Centroid
-const createClusterIcon = (color: string = '#3b82f6', isShared: boolean = false, routeColors: string[] = []) => {
+const createClusterIcon = (color: string = '#3b82f6', isShared: boolean = false, routeColors: string[] = [], opacity: number = 1.0) => {
   if (isShared && routeColors.length >= 2) {
     // Concentric dual-color ring for shared hubs
     return L.divIcon({
       className: 'custom-cluster-marker-shared',
       html: `
-        <div style="display: flex; justify-content: center; align-items: center; width: 34px; height: 34px; background: white; border: 3.5px double ${routeColors[0]}; border-radius: 50%; box-shadow: 0 4px 10px rgba(0,0,0,0.25); outline: 3px solid ${routeColors[1]}; transform: translateY(-5px);">
+        <div style="display: flex; justify-content: center; align-items: center; width: 34px; height: 34px; background: white; border: 3.5px double ${routeColors[0]}; border-radius: 50%; box-shadow: 0 4px 10px rgba(0,0,0,0.25); outline: 3px solid ${routeColors[1]}; transform: translateY(-5px); opacity: ${opacity}; transition: opacity 0.2s;">
           <span style="font-size: 9px; font-weight: 800; color: #1e293b;">HUB</span>
         </div>
       `,
@@ -69,7 +70,7 @@ const createClusterIcon = (color: string = '#3b82f6', isShared: boolean = false,
   return L.divIcon({
     className: 'custom-cluster-marker',
     html: `
-      <div style="display: flex; justify-content: center; align-items: center; width: 28px; height: 28px; background: white; border: 3.5px solid ${color}; border-radius: 50%; box-shadow: 0 3px 8px rgba(0,0,0,0.2); transform: translateY(-4px);">
+      <div style="display: flex; justify-content: center; align-items: center; width: 28px; height: 28px; background: white; border: 3.5px solid ${color}; border-radius: 50%; box-shadow: 0 3px 8px rgba(0,0,0,0.2); transform: translateY(-4px); opacity: ${opacity}; transition: opacity 0.2s;">
         <div style="width: 8px; height: 8px; background: ${color}; border-radius: 50%;"></div>
       </div>
     `,
@@ -125,6 +126,7 @@ export default function ScanFlowMap({
   interactive = false,
   onMapClick,
   highlightClusterId,
+  selectedRouteId,
   hqLocation,
   routesData = [],
   clustersData = [],
@@ -199,14 +201,19 @@ export default function ScanFlowMap({
           // Leaflet expects coordinates in [lat, lng] format, GeoJSON stores in [lng, lat]
           const positions = route.pathGeoJSON.coordinates.map((c: number[]) => [c[1], c[0]]);
           
+          const isSelected = selectedRouteId === route._id;
+          const isAnyRouteSelected = !!selectedRouteId;
+          const opacity = isAnyRouteSelected ? (isSelected ? 1.0 : 0.12) : 0.85;
+          const weight = isAnyRouteSelected ? (isSelected ? 8 : 2) : 5;
+
           return (
             <Polyline
               key={route._id}
               positions={positions}
               pathOptions={{
                 color: route.color || '#3b82f6',
-                weight: 5,
-                opacity: 0.85,
+                weight,
+                opacity,
                 lineJoin: 'round'
               }}
             />
@@ -233,12 +240,20 @@ export default function ScanFlowMap({
             }
           }
 
+          const isClusterInSelectedRoute = selectedRouteId
+            ? (cluster.routeIds && cluster.routeIds.some((rId: any) => (rId._id || rId).toString() === selectedRouteId))
+            : false;
+          const isAnyRouteSelected = !!selectedRouteId;
+          const clusterOpacity = isAnyRouteSelected ? (isClusterInSelectedRoute ? 1.0 : 0.15) : 1.0;
+          const circleOpacity = isAnyRouteSelected ? (isClusterInSelectedRoute ? 0.25 : 0.02) : (isHighlighted ? 0.25 : 0.08);
+          const circleWeight = isAnyRouteSelected ? (isClusterInSelectedRoute ? 2.5 : 0.5) : (isHighlighted ? 2.5 : 1);
+
           return (
             <div key={cluster._id}>
               {/* Centroid Marker */}
               <Marker 
                 position={[cluster.centroidLat, cluster.centroidLng]} 
-                icon={createClusterIcon(clusterColor, cluster.isSharedHub, relatedRouteColors)}
+                icon={createClusterIcon(clusterColor, cluster.isSharedHub, relatedRouteColors, clusterOpacity)}
               >
                 <Popup>
                   <div className="p-1 font-sans text-xs">
@@ -256,9 +271,9 @@ export default function ScanFlowMap({
                 radius={cluster.radiusKm * 1000} // meters
                 pathOptions={{
                   fillColor: clusterColor,
-                  fillOpacity: isHighlighted ? 0.25 : 0.08,
+                  fillOpacity: circleOpacity,
                   color: clusterColor,
-                  weight: isHighlighted ? 2.5 : 1,
+                  weight: circleWeight,
                   dashArray: cluster.parentCluster ? '5, 5' : undefined
                 }}
               />
@@ -280,11 +295,17 @@ export default function ScanFlowMap({
             }
           }
 
+          const isClinicInSelectedRoute = selectedRouteId && matchedCluster
+            ? (matchedCluster.routeIds && matchedCluster.routeIds.some((rId: any) => (rId._id || rId).toString() === selectedRouteId))
+            : false;
+          const isAnyRouteSelected = !!selectedRouteId;
+          const clinicOpacity = isAnyRouteSelected ? (isClinicInSelectedRoute ? 1.0 : 0.15) : 1.0;
+
           return (
             <Marker
               key={clinic._id}
               position={[clinic.lat, clinic.lng]}
-              icon={createClinicIcon(clinicColor)}
+              icon={createClinicIcon(clinicColor, clinicOpacity)}
             >
               <Popup>
                 <div className="p-1 font-sans text-xs">

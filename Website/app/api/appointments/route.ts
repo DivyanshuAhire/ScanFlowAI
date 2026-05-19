@@ -4,7 +4,7 @@ import { Appointment } from '@/lib/db/models/Appointment';
 import { ScanType } from '@/lib/db/models/ScanType';
 import { Clinic } from '@/lib/db/models/Clinic';
 import { withAuth, AuthenticatedRequest } from '@/lib/auth/middleware';
-import { getSlotSuggestions } from '@/lib/engines/slotSuggestor';
+import { getSlotSuggestions, assignProvisionalEmployee } from '@/lib/engines/slotSuggestor';
 import { z } from 'zod';
 
 const createAppointmentSchema = z.object({
@@ -67,9 +67,15 @@ export const POST = withAuth(async (req: AuthenticatedRequest) => {
       notes: notes || ''
     } as any);
 
+    // Call assignProvisionalEmployee immediately after confirmed booking is saved to DB
+    await assignProvisionalEmployee(appointment._id.toString(), date);
+
+    // Retrieve the updated appointment to return in response
+    const updatedAppointment = await Appointment.findById(appointment._id);
+
     return NextResponse.json({
       success: true,
-      appointment
+      appointment: updatedAppointment || appointment
     });
   } catch (error: any) {
     console.error('Create Appointment error:', error);

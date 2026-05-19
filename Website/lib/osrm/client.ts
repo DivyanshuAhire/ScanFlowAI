@@ -101,3 +101,11 @@ export async function getRoadRoute(
     return { distanceKm, pathGeoJSON };
   }
 }
+
+export async function getRoadDistance(
+  from: { lat: number; lng: number },
+  to:   { lat: number; lng: number }
+): Promise<number> {
+  const route = await getRoadRoute(from, to);
+  return route.distanceKm;
+}

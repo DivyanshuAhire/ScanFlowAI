@@ -4,20 +4,21 @@ import { Cluster } from '../db/models/Cluster';
 import { Appointment } from '../db/models/Appointment';
 import { Employee } from '../db/models/Employee';
 import { Route } from '../db/models/Route';
-import { getRoadRoute } from '../osrm/client';
+import { getRoadDistance } from '../osrm/client';
 
 export const ALL_SLOTS = [
-  '09:00', '10:00', '11:00', '12:00', '13:00',
-  '14:00', '15:00', '16:00', '17:00', '18:00'
+  "09:00", "10:00", "11:00", "12:00", "13:00",
+  "14:00", "15:00", "16:00", "17:00", "18:00"
 ];
 
 export interface SlotSuggestion {
   slot: string;
-  status: 'BEST' | 'AVAILABLE' | 'TAKEN';
+  status: "BEST" | "AVAILABLE" | "TAKEN";
+  score: number;
   reason: string;
   suggestedEmployeeId: string | null;
   suggestedEmployeeName: string | null;
-  score: number;
+  appliedRule: "RULE_0" | "RULE_1" | "RULE_2" | "RULE_3" | "RULE_4" | "NONE";
 }
 
 // Helpers for time operations
@@ -32,6 +33,106 @@ export function minutesToTime(mins: number): string {
   return `${hrs.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
 }
 
+export function roundUpToNextSlot(mins: number): string | null {
+  for (const slot of ALL_SLOTS) {
+    if (timeToMinutes(slot) >= mins) {
+      return slot;
+    }
+  }
+  return null;
+}
+
+// Local helper to intersect route ids
+function routeIdsIntersect(routeIds1: any[], routeIds2: any[]): boolean {
+  if (!routeIds1 || !routeIds2) return false;
+  const set1 = new Set(routeIds1.map(id => id.toString()));
+  return routeIds2.some(id => set1.has(id.toString()));
+}
+
+// Local helper for getClusterFamily
+export async function getClusterFamily(clusterId: string): Promise<string[]> {
+  const currentCluster = await Cluster.findById(clusterId);
+  if (!currentCluster) {
+    return [clusterId];
+  }
+
+  const familyIds = new Set<string>();
+  familyIds.add(currentCluster._id.toString());
+
+  // All clusters where parentCluster === clusterId
+  const subclusters = await Cluster.find({ parentCluster: currentCluster._id } as any);
+  for (const sub of subclusters) {
+    familyIds.add(sub._id.toString());
+  }
+
+  // If the cluster IS a subcluster (has parentCluster),
+  // also return the parent and all siblings of that parent
+  if (currentCluster.parentCluster) {
+    const parentIdStr = currentCluster.parentCluster.toString();
+    familyIds.add(parentIdStr);
+
+    const siblings = await Cluster.find({ parentCluster: parentIdStr } as any);
+    for (const sib of siblings) {
+      familyIds.add(sib._id.toString());
+    }
+  }
+
+  return Array.from(familyIds);
+}
+
+async function getClusterOrderIndex(cluster: any): Promise<number> {
+  if (cluster.routeIds && cluster.routeIds.length > 0) {
+    const primaryRouteId = cluster.routeIds[0];
+    const route = await Route.findById(primaryRouteId);
+    if (route) {
+      const idx = route.clusterIds.findIndex(id => id.toString() === cluster._id.toString());
+      if (idx !== -1) {
+        return idx + 1; // 1-based index
+      }
+    }
+  }
+  return cluster.routeOrderIndex ?? 0;
+}
+
+export async function isDirectionForward(sourceCluster: any, targetCluster: any): Promise<boolean> {
+  const sharedRouteIds = sourceCluster.routeIds.filter((rId: any) => 
+    targetCluster.routeIds.some((nrId: any) => nrId.toString() === rId.toString())
+  );
+
+  if (sharedRouteIds.length > 0) {
+    const sharedRoutes = await Route.find({ _id: { $in: sharedRouteIds } });
+    for (const route of sharedRoutes) {
+      const sourceIndex = route.clusterIds.findIndex(id => id.toString() === sourceCluster._id.toString());
+      const targetIndex = route.clusterIds.findIndex(id => id.toString() === targetCluster._id.toString());
+      if (sourceIndex !== -1 && targetIndex !== -1 && sourceIndex < targetIndex) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // Fallback if no shared routes (e.g. cross-route)
+  const sourceOrder = await getClusterOrderIndex(sourceCluster);
+  const targetOrder = await getClusterOrderIndex(targetCluster);
+  return sourceOrder < targetOrder;
+}
+
+// OSRM Road Distance Cache
+const osrmCache = new Map<string, number>();
+
+async function getCachedRoadDistance(
+  from: { lat: number; lng: number },
+  to: { lat: number; lng: number }
+): Promise<number> {
+  const key = `${from.lat.toFixed(6)}:${from.lng.toFixed(6)}:${to.lat.toFixed(6)}:${to.lng.toFixed(6)}`;
+  if (osrmCache.has(key)) {
+    return osrmCache.get(key)!;
+  }
+  const dist = await getRoadDistance(from, to);
+  osrmCache.set(key, dist);
+  return dist;
+}
+
 export async function getSlotSuggestions(
   clinicId: string,
   date: string
@@ -44,268 +145,415 @@ export async function getSlotSuggestions(
     throw new Error('Clinic not found');
   }
 
-  const newCluster = newClinic.clusterId as any;
-  if (!newCluster) {
-    throw new Error('Clinic is not assigned to a cluster');
+  const newClinicCluster = newClinic.clusterId as any;
+  if (!newClinicCluster) {
+    throw new Error('Clinic has no cluster assigned');
   }
 
-  // Find the primary/parent cluster for Rule 0
-  const mainClusterId = newCluster.parentCluster || newCluster._id;
-
-  // Find all related clusters (parent + subclusters)
-  const relatedClusters = await Cluster.find({
-    $or: [{ _id: mainClusterId }, { parentCluster: mainClusterId }]
-  });
-  const relatedClusterIds = relatedClusters.map(c => c._id);
-
-  // Find all clinics in these related clusters
-  const clinicsInArea = await Clinic.find({ clusterId: { $in: relatedClusterIds } } as any);
-  const clinicIdsInArea = clinicsInArea.map(c => c._id);
-
-  // Load all appointments in this cluster area for the date (Rule 0)
-  const areaAppointments = await Appointment.find({
-    clinicId: { $in: clinicIdsInArea },
+  // 2. Load all appointments on this date where status != CANCELLED
+  const allAppointments = await Appointment.find({
     date,
     status: { $ne: 'CANCELLED' }
-  } as any);
-
-  // Keep track of which slots are booked in this cluster area
-  const takenSlots = new Set<string>();
-  for (const appt of areaAppointments) {
-    takenSlots.add(appt.slotTime);
-  }
-
-  // Find other bookings on the same route for other rules
-  const routeIds = newCluster.routeIds;
-  const sameRouteAppointments = await Appointment.find({
-    date,
-    status: { $ne: 'CANCELLED' }
-  } as any).populate({
+  }).populate({
     path: 'clinicId',
     populate: { path: 'clusterId' }
   });
 
-  // Filter to only those on the same route
-  const sameRouteAppts = sameRouteAppointments.filter(appt => {
-    const apptCluster = (appt.clinicId as any)?.clusterId;
-    if (!apptCluster) return false;
-    // Check if there is any shared routeId
-    return apptCluster.routeIds.some((rId: any) => routeIds.some((nrId: any) => nrId.toString() === rId.toString()));
-  });
+  // 3. BEFORE applying any rule, build an employee busy map:
+  const busyMap = new Map<string, Set<string>>();
+  for (const appt of allAppointments) {
+    const empIdObj = appt.assignedEmployeeId ?? appt.suggestedByEmployeeId ?? null;
+    if (empIdObj) {
+      const empId = empIdObj.toString();
+      if (!busyMap.has(empId)) {
+        busyMap.set(empId, new Set<string>());
+      }
+      busyMap.get(empId)!.add(appt.slotTime);
+    }
+  }
 
-  // Filter to other routes
-  const otherRouteAppts = sameRouteAppointments.filter(appt => {
-    const apptCluster = (appt.clinicId as any)?.clusterId;
-    if (!apptCluster) return false;
-    return !apptCluster.routeIds.some((rId: any) => routeIds.some((nrId: any) => nrId.toString() === rId.toString()));
-  });
+  // Helper to check if employee is busy at slot
+  const isEmployeeBusy = (map: Map<string, Set<string>>, empId: string, slot: string): boolean => {
+    return map.get(empId)?.has(slot) ?? false;
+  };
 
-  // Setup initial slot suggestions
+  // Cache employee names to minimize queries
+  const employeeCache = new Map<string, { name: string }>();
+  const getEmployeeName = async (empId: string): Promise<string | null> => {
+    if (employeeCache.has(empId)) {
+      return employeeCache.get(empId)!.name;
+    }
+    const emp = await Employee.findById(empId);
+    if (emp) {
+      employeeCache.set(empId, { name: emp.name });
+      return emp.name;
+    }
+    return null;
+  };
+
+  // Initialize all suggestions to AVAILABLE
   const suggestions: Record<string, SlotSuggestion> = {};
   for (const slot of ALL_SLOTS) {
     suggestions[slot] = {
       slot,
-      status: 'AVAILABLE',
-      reason: 'Slot is open and available',
+      status: "AVAILABLE",
+      score: 0,
+      reason: "No constraints — slot is open",
       suggestedEmployeeId: null,
       suggestedEmployeeName: null,
-      score: 0
+      appliedRule: "NONE"
     };
   }
 
-  // ----------------------------------------------------
-  // RULE 0: Hard Block (TAKEN)
-  // ----------------------------------------------------
-  for (const slot of ALL_SLOTS) {
-    if (takenSlots.has(slot)) {
-      suggestions[slot] = {
-        slot,
-        status: 'TAKEN',
-        reason: `Cluster area already has a booking at ${slot}`,
+  // ── RULE 0 (TAKEN, score 0) ──────────────────────────
+  const familyIds = await getClusterFamily(newClinicCluster._id.toString());
+  const takenSlots = new Set<string>();
+
+  const rule0Appointments = allAppointments.filter(appt => {
+    const apptClinic = appt.clinicId as any;
+    const apptCluster = apptClinic?.clusterId;
+    if (!apptCluster) return false;
+    return familyIds.includes(apptCluster._id.toString());
+  });
+
+  for (const appt of rule0Appointments) {
+    const T = appt.slotTime;
+    if (ALL_SLOTS.includes(T)) {
+      takenSlots.add(T);
+      suggestions[T] = {
+        slot: T,
+        status: "TAKEN",
+        score: 0,
+        reason: `Cluster area already has a booking at ${T}`,
         suggestedEmployeeId: null,
         suggestedEmployeeName: null,
-        score: 0
+        appliedRule: "RULE_0"
       };
     }
   }
 
-  // Helper to safely apply suggestions
-  const applyBest = (slot: string, score: number, reason: string, empId: string | null = null, empName: string | null = null) => {
-    if (suggestions[slot].status === 'TAKEN') return;
-    
-    if (suggestions[slot].status === 'AVAILABLE' || (suggestions[slot].status === 'BEST' && score > suggestions[slot].score)) {
-      suggestions[slot].status = 'BEST';
-      suggestions[slot].score = score;
-      suggestions[slot].reason = reason;
-      suggestions[slot].suggestedEmployeeId = empId;
-      suggestions[slot].suggestedEmployeeName = empName;
+  // Helper to safely propose BEST suggestions and keep the highest score
+  const proposeSuggestion = async ({
+    slot,
+    score,
+    reason,
+    suggestedEmployeeId,
+    appliedRule
+  }: {
+    slot: string;
+    score: number;
+    reason: string;
+    suggestedEmployeeId: string | null;
+    appliedRule: "RULE_1" | "RULE_2" | "RULE_3" | "RULE_4";
+  }) => {
+    if (takenSlots.has(slot)) return;
+
+    const existing = suggestions[slot];
+    if (existing.status === "AVAILABLE" || score > existing.score) {
+      const empName = suggestedEmployeeId ? await getEmployeeName(suggestedEmployeeId) : null;
+      suggestions[slot] = {
+        slot,
+        status: "BEST",
+        score,
+        reason,
+        suggestedEmployeeId,
+        suggestedEmployeeName: empName,
+        appliedRule
+      };
     }
   };
 
-  // ----------------------------------------------------
-  // RULE 1: Same Cluster Adjacency (BEST, Score: 90)
-  // ----------------------------------------------------
-  // If this cluster (or subclusters) has any bookings, suggest adjacent hours
-  for (const appt of areaAppointments) {
-    const apptMins = timeToMinutes(appt.slotTime);
-    
-    // T + 1 hour (60 mins)
-    const plusOneStr = minutesToTime(apptMins + 60);
-    if (ALL_SLOTS.includes(plusOneStr)) {
-      applyBest(
-        plusOneStr, 
-        90, 
-        `Adjacent to existing booking in ${newCluster.name} — keeps one technician in the area`
-      );
-    }
-
-    // T - 1 hour (60 mins)
-    const minusOneStr = minutesToTime(apptMins - 60);
-    if (ALL_SLOTS.includes(minusOneStr) && apptMins - 60 >= timeToMinutes('09:00')) {
-      applyBest(
-        minusOneStr, 
-        90, 
-        `Adjacent to existing booking in ${newCluster.name} — keeps one technician in the area`
-      );
-    }
-  }
-
-  // ----------------------------------------------------
-  // RULE 2: Distance >= 30km from HQ (BEST, Score: 85)
-  // ----------------------------------------------------
-  if ((newCluster.distanceFromHqKm || 0) >= 30) {
-    applyBest(
-      '10:00', 
-      85, 
-      `Cluster is ${newCluster.distanceFromHqKm?.toFixed(1)}km from HQ — morning slot ensures directional travel`
-    );
-    applyBest(
-      '17:00', 
-      85, 
-      `Cluster is ${newCluster.distanceFromHqKm?.toFixed(1)}km from HQ — evening slot ensures directional travel`
-    );
-  }
-
-  // ----------------------------------------------------
-  // RULE 3: Same Route Travel Time (BEST, Score: 95)
-  // ----------------------------------------------------
-  for (const appt of sameRouteAppts) {
+  // ── RULE 1 (BEST, score 90) ──────────────────────────
+  const rule1Appointments = allAppointments.filter(appt => {
     const apptClinic = appt.clinicId as any;
     const apptCluster = apptClinic?.clusterId;
-    if (!apptCluster) continue;
+    if (!apptCluster) return false;
+    return apptCluster._id.toString() === newClinicCluster._id.toString();
+  });
 
-    try {
-      // Get road distance between the two clusters
-      const roadResult = await getRoadRoute(
-        { lat: apptCluster.centroidLat, lng: apptCluster.centroidLng },
-        { lat: newCluster.centroidLat, lng: newCluster.centroidLng }
-      );
+  for (const appt of rule1Appointments) {
+    const slotMins = timeToMinutes(appt.slotTime);
+    const adjacentSlots = [];
 
-      const distKm = roadResult.distanceKm;
-      const travelMins = Math.round(distKm * 3);
-      
-      const apptFreeMins = timeToMinutes(appt.slotTime) + appt.durationMins;
-      const earliestArrivalMins = apptFreeMins + travelMins;
-      const suggestFromMins = earliestArrivalMins + 10; // Grace period
+    const beforeSlot = minutesToTime(slotMins - 60);
+    if (ALL_SLOTS.includes(beforeSlot) && !takenSlots.has(beforeSlot)) {
+      adjacentSlots.push(beforeSlot);
+    }
 
-      // Directional Flow Enforcement:
-      // suggestion is ONLY valid if: newCluster.routeOrderIndex > apptCluster.routeOrderIndex
-      // Exception: the first booking of the day has no constraint, but here we are evaluating based on an existing booking
-      const newOrder = newCluster.routeOrderIndex || 0;
-      const existingOrder = apptCluster.routeOrderIndex || 0;
+    const afterSlot = minutesToTime(slotMins + 60);
+    if (ALL_SLOTS.includes(afterSlot) && !takenSlots.has(afterSlot)) {
+      adjacentSlots.push(afterSlot);
+    }
 
-      if (newOrder > existingOrder) {
-        // Find slots that start at or after suggestFromMins
-        for (const slot of ALL_SLOTS) {
-          const slotMins = timeToMinutes(slot);
-          if (slotMins >= suggestFromMins) {
-            // Find employee name if assigned or suggested
-            let empId: string | null = null;
-            let empName: string | null = null;
-            
-            const empObjectId = appt.suggestedByEmployeeId || appt.assignedEmployeeId;
-            if (empObjectId) {
-              const emp = await Employee.findById(empObjectId);
-              if (emp) {
-                empId = emp._id.toString();
-                empName = emp.name;
-              }
-            }
-
-            applyBest(
-              slot,
-              95,
-              `Tech ${empName || 'assigned'} at ${apptCluster.name} at ${appt.slotTime} can reach here by ${minutesToTime(earliestArrivalMins)}`,
-              empId,
-              empName
-            );
-          }
+    for (const adjSlot of adjacentSlots) {
+      const empIdObj = appt.assignedEmployeeId ?? appt.suggestedByEmployeeId ?? null;
+      if (empIdObj) {
+        const empId = empIdObj.toString();
+        if (isEmployeeBusy(busyMap, empId, adjSlot)) {
+          await proposeSuggestion({
+            slot: adjSlot,
+            score: 90,
+            reason: "Adjacent to existing booking in this cluster (tech unavailable — conflict)",
+            suggestedEmployeeId: null,
+            appliedRule: "RULE_1"
+          });
+        } else {
+          const empName = await getEmployeeName(empId);
+          await proposeSuggestion({
+            slot: adjSlot,
+            score: 90,
+            reason: `Adjacent to ${(appt.clinicId as any).name} booking at ${appt.slotTime} — tech ${empName || 'unknown'} already in this area`,
+            suggestedEmployeeId: empId,
+            appliedRule: "RULE_1"
+          });
         }
       }
-    } catch (err) {
-      console.error('Error in Rule 3 slot calculations:', err);
     }
   }
 
-  // ----------------------------------------------------
-  // RULE 4: Cross-Route Proximity (BEST, Score: 75)
-  // ----------------------------------------------------
-  // Condition: No employees currently assigned/suggested for Route R on this date
-  const hasEmployeesOnRoute = sameRouteAppts.some(
-    appt => appt.suggestedByEmployeeId || appt.assignedEmployeeId
-  );
+  // ── RULE 2 (BEST, score 85) ──────────────────────────
+  const distHq = newClinicCluster.distanceFromHqKm ?? 0;
+  if (distHq >= 30) {
+    for (const slot of ["10:00", "17:00"]) {
+      if (!takenSlots.has(slot)) {
+        await proposeSuggestion({
+          slot,
+          score: 85,
+          reason: `Cluster is ${distHq}km from HQ — 10am/5pm slots ensure directional travel, no backtracking`,
+          suggestedEmployeeId: null,
+          appliedRule: "RULE_2"
+        });
+      }
+    }
+  }
 
-  if (!hasEmployeesOnRoute) {
-    for (const appt of otherRouteAppts) {
+  // ── RULE 3 (BEST, score 95) ──────────────────────────
+  const rule3Appointments = allAppointments.filter(appt => {
+    const apptClinic = appt.clinicId as any;
+    const apptCluster = apptClinic?.clusterId;
+    if (!apptCluster) return false;
+
+    // Intersects on routeIds
+    return routeIdsIntersect(apptCluster.routeIds, newClinicCluster.routeIds);
+  });
+
+  for (const A of rule3Appointments) {
+    const A_clinic = A.clinicId as any;
+    const A_cluster = A_clinic.clusterId;
+
+    // Rule 5 Direction enforcement
+    const isForward = await isDirectionForward(A_cluster, newClinicCluster);
+    if (!isForward) {
+      continue;
+    }
+
+    const freeAtMins = timeToMinutes(A.slotTime) + A.durationMins;
+    const distKm = await getCachedRoadDistance(
+      { lat: A_cluster.centroidLat, lng: A_cluster.centroidLng },
+      { lat: newClinicCluster.centroidLat, lng: newClinicCluster.centroidLng }
+    );
+    const travelMins = Math.round(distKm * 3);
+    const arrivalMins = freeAtMins + travelMins + 10;
+    const suggestedSlot = roundUpToNextSlot(arrivalMins);
+
+    if (suggestedSlot !== null && !takenSlots.has(suggestedSlot)) {
+      const empIdObj = A.assignedEmployeeId ?? A.suggestedByEmployeeId ?? null;
+      if (empIdObj) {
+        const empId = empIdObj.toString();
+        if (isEmployeeBusy(busyMap, empId, suggestedSlot)) {
+          continue;
+        }
+
+        const empName = await getEmployeeName(empId);
+        const freeAtStr = minutesToTime(freeAtMins);
+        const arrivalStr = minutesToTime(arrivalMins);
+
+        await proposeSuggestion({
+          slot: suggestedSlot,
+          score: 95,
+          reason: `Tech ${empName || 'unknown'} at ${A_cluster.name} at ${A.slotTime} finishes at ${freeAtStr}, travels ${distKm.toFixed(1)}km (~${travelMins}min), earliest arrival ${arrivalStr}`,
+          suggestedEmployeeId: empId,
+          appliedRule: "RULE_3"
+        });
+      }
+    }
+  }
+
+  // ── RULE 4 (BEST, score 75) ──────────────────────────
+  const hasTechOnRoute = allAppointments.some(appt => {
+    const apptClinic = appt.clinicId as any;
+    const apptCluster = apptClinic?.clusterId;
+    if (!apptCluster) return false;
+    return routeIdsIntersect(apptCluster.routeIds, newClinicCluster.routeIds);
+  });
+
+  if (!hasTechOnRoute) {
+    const otherRouteAppointments = allAppointments.filter(appt => {
       const apptClinic = appt.clinicId as any;
       const apptCluster = apptClinic?.clusterId;
-      if (!apptCluster) continue;
+      if (!apptCluster) return false;
+      return !routeIdsIntersect(apptCluster.routeIds, newClinicCluster.routeIds);
+    });
 
-      try {
-        const roadResult = await getRoadRoute(
-          { lat: apptCluster.centroidLat, lng: apptCluster.centroidLng },
-          { lat: newCluster.centroidLat, lng: newCluster.centroidLng }
-        );
+    for (const B of otherRouteAppointments) {
+      const B_clinic = B.clinicId as any;
+      const B_cluster = B_clinic.clusterId;
 
-        const distKm = roadResult.distanceKm;
+      // Rule 5 Direction enforcement
+      const isForward = await isDirectionForward(B_cluster, newClinicCluster);
+      if (!isForward) {
+        continue;
+      }
 
-        if (distKm <= 5) {
-          const techFreeMins = timeToMinutes(appt.slotTime) + appt.durationMins;
-          const travelMins = Math.round(distKm * 3);
-          const earliestArrivalMins = techFreeMins + travelMins + 10; // with grace
+      const distKm = await getCachedRoadDistance(
+        { lat: B_cluster.centroidLat, lng: B_cluster.centroidLng },
+        { lat: newClinicCluster.centroidLat, lng: newClinicCluster.centroidLng }
+      );
 
-          // Round up to next slot boundary (nearest hour)
-          const nextSlotMins = Math.ceil(earliestArrivalMins / 60) * 60;
-          const adjacentSlotStr = minutesToTime(nextSlotMins);
+      if (distKm <= 5) {
+        const freeAtMins = timeToMinutes(B.slotTime) + B.durationMins;
+        const adjacentSlot = roundUpToNextSlot(freeAtMins + 10);
 
-          if (ALL_SLOTS.includes(adjacentSlotStr)) {
-            let empId: string | null = null;
-            let empName: string | null = null;
-
-            const empObjectId = appt.suggestedByEmployeeId || appt.assignedEmployeeId;
-            if (empObjectId) {
-              const emp = await Employee.findById(empObjectId);
-              if (emp) {
-                empId = emp._id.toString();
-                empName = emp.name;
-              }
+        if (adjacentSlot !== null && !takenSlots.has(adjacentSlot)) {
+          const empIdObj = B.assignedEmployeeId ?? B.suggestedByEmployeeId ?? null;
+          if (empIdObj) {
+            const empId = empIdObj.toString();
+            if (isEmployeeBusy(busyMap, empId, adjacentSlot)) {
+              continue;
             }
 
-            applyBest(
-              adjacentSlotStr,
-              75,
-              `Tech ${empName || 'assigned'} on nearby Route can reach within ${distKm.toFixed(1)}km — no other tech on Route today`,
-              empId,
-              empName
-            );
+            const empName = await getEmployeeName(empId);
+            const routeIdStr = (B_cluster.routeIds && B_cluster.routeIds.length > 0)
+              ? B_cluster.routeIds[0].toString()
+              : "unknown";
+
+            await proposeSuggestion({
+              slot: adjacentSlot,
+              score: 75,
+              reason: `Tech ${empName || 'unknown'} on Route ${routeIdStr} is ${distKm.toFixed(1)}km away and free after ${B.slotTime} — no other tech on this route today`,
+              suggestedEmployeeId: empId,
+              appliedRule: "RULE_4"
+            });
           }
         }
-      } catch (err) {
-        console.error('Error in Rule 4 calculations:', err);
       }
     }
   }
 
-  // Sort and output
-  return Object.values(suggestions);
+  // Return exactly 10 slots
+  return ALL_SLOTS.map(slot => suggestions[slot]);
+}
+
+export async function assignProvisionalEmployee(
+  appointmentId: string,
+  date: string
+): Promise<void> {
+  await connectToDatabase();
+
+  const appointment = await Appointment.findById(appointmentId).populate({
+    path: 'clinicId',
+    populate: { path: 'clusterId' }
+  });
+  if (!appointment) return;
+
+  const otherAppointments = await Appointment.find({
+    date,
+    _id: { $ne: appointmentId },
+    status: { $ne: 'CANCELLED' }
+  }).populate({
+    path: 'clinicId',
+    populate: { path: 'clusterId' }
+  });
+
+  const busyMap = new Map<string, Set<string>>();
+  for (const appt of otherAppointments) {
+    const empIdObj = appt.assignedEmployeeId ?? appt.suggestedByEmployeeId ?? null;
+    if (empIdObj) {
+      const empId = empIdObj.toString();
+      if (!busyMap.has(empId)) {
+        busyMap.set(empId, new Set<string>());
+      }
+      busyMap.get(empId)!.add(appt.slotTime);
+    }
+  }
+
+  const clinicObj = appointment.clinicId as any;
+  const clusterObj = clinicObj?.clusterId;
+  let provisionalEmpId: string | null = null;
+
+  // STEP 1 — Check route continuity
+  if (clusterObj && clusterObj.routeIds) {
+    const routeIds = clusterObj.routeIds;
+    const continuityAppt = otherAppointments.find(appt => {
+      const apptClinic = appt.clinicId as any;
+      const apptCluster = apptClinic?.clusterId;
+      if (!apptCluster) return false;
+      
+      const intersects = routeIdsIntersect(apptCluster.routeIds, routeIds);
+      const hasSuggestedEmp = appt.suggestedByEmployeeId !== undefined && appt.suggestedByEmployeeId !== null;
+      return intersects && hasSuggestedEmp;
+    });
+
+    if (continuityAppt) {
+      provisionalEmpId = continuityAppt.suggestedByEmployeeId!.toString();
+    }
+  }
+
+  // STEP 4 — Conflict double-check for Step 1
+  if (provisionalEmpId) {
+    const isBusy = busyMap.get(provisionalEmpId)?.has(appointment.slotTime) ?? false;
+    if (isBusy) {
+      provisionalEmpId = null; // Discard and fall through to Step 2
+    }
+  }
+
+  // STEP 2 — If no route employee exists yet, pick fresh
+  if (provisionalEmpId === null) {
+    const activeEmployees = await Employee.find({ isActive: true });
+    const freeEmployees = activeEmployees.filter(emp => {
+      const empId = emp._id.toString();
+      const isBusy = busyMap.get(empId)?.has(appointment.slotTime) ?? false;
+      return !isBusy;
+    });
+
+    if (freeEmployees.length > 0) {
+      const allApptsForDate = await Appointment.find({ date });
+      const countMap = new Map<string, number>();
+      for (const emp of freeEmployees) {
+        countMap.set(emp._id.toString(), 0);
+      }
+
+      for (const appt of allApptsForDate) {
+        if (appt.suggestedByEmployeeId) {
+          const empId = appt.suggestedByEmployeeId.toString();
+          if (countMap.has(empId)) {
+            countMap.set(empId, countMap.get(empId)! + 1);
+          }
+        }
+      }
+
+      freeEmployees.sort((a, b) => {
+        const countA = countMap.get(a._id.toString()) ?? 0;
+        const countB = countMap.get(b._id.toString()) ?? 0;
+        return countA - countB;
+      });
+
+      provisionalEmpId = freeEmployees[0]._id.toString();
+    }
+  }
+
+  // STEP 4 — Conflict double-check before saving (redundant but safe)
+  if (provisionalEmpId) {
+    const isBusy = busyMap.get(provisionalEmpId)?.has(appointment.slotTime) ?? false;
+    if (isBusy) {
+      provisionalEmpId = null;
+    }
+  }
+
+  // STEP 3 — Save
+  if (provisionalEmpId) {
+    await Appointment.findByIdAndUpdate(appointmentId, {
+      suggestedByEmployeeId: provisionalEmpId
+    });
+  }
 }

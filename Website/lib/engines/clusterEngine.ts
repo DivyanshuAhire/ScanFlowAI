@@ -242,10 +242,109 @@ export async function assignClinicToClusterAndRoute(
     }
   }
 
+  await updateAllRouteClusterIntersections();
+
   return {
     clusterId: finalCluster._id.toString(),
     routeId: assignedRouteId,
   };
+}
+
+export async function updateAllRouteClusterIntersections(): Promise<void> {
+  const allRoutes = await Route.find();
+  const allClusters = await Cluster.find();
+
+  // Track route-to-cluster and cluster-to-route maps
+  const routeToClustersMap = new Map<string, Set<string>>();
+  const clusterToRoutesMap = new Map<string, Set<string>>();
+
+  for (const route of allRoutes) {
+    routeToClustersMap.set(route._id.toString(), new Set<string>());
+  }
+  for (const cluster of allClusters) {
+    clusterToRoutesMap.set(cluster._id.toString(), new Set<string>());
+  }
+
+  for (const route of allRoutes) {
+    if (!route.pathGeoJSON?.coordinates || route.pathGeoJSON.coordinates.length === 0) {
+      continue;
+    }
+
+    const routeCoords = route.pathGeoJSON.coordinates; // Array of [lng, lat]
+
+    for (const cluster of allClusters) {
+      const cLat = cluster.centroidLat;
+      const cLng = cluster.centroidLng;
+      // Standardize search on cluster radius (meters)
+      const radiusMeters = (cluster.radiusKm || 2) * 1000;
+
+      let intersects = false;
+      for (const coord of routeCoords) {
+        const lng = coord[0];
+        const lat = coord[1];
+        if (haversineDistanceMeters(cLat, cLng, lat, lng) <= radiusMeters) {
+          intersects = true;
+          break;
+        }
+      }
+
+      if (intersects) {
+        routeToClustersMap.get(route._id.toString())!.add(cluster._id.toString());
+        clusterToRoutesMap.get(cluster._id.toString())!.add(route._id.toString());
+      }
+    }
+  }
+
+  // Propagate subclusters to parent clusters and vice versa
+  for (const cluster of allClusters) {
+    if (cluster.parentCluster) {
+      const parentIdStr = cluster.parentCluster.toString();
+      const parentRoutes = clusterToRoutesMap.get(parentIdStr);
+      const subRoutes = clusterToRoutesMap.get(cluster._id.toString());
+
+      if (parentRoutes && subRoutes) {
+        for (const rId of parentRoutes) {
+          subRoutes.add(rId);
+        }
+        for (const rId of subRoutes) {
+          parentRoutes.add(rId);
+          routeToClustersMap.get(rId)!.add(parentIdStr);
+          routeToClustersMap.get(rId)!.add(cluster._id.toString());
+        }
+      }
+    }
+  }
+
+  // Update Route database records
+  for (const route of allRoutes) {
+    const clusterIdStrs = Array.from(routeToClustersMap.get(route._id.toString()) || []);
+    
+    // Sort clusters by distanceFromHqKm ascending to maintain flow order
+    const routeClusters = await Cluster.find({ _id: { $in: clusterIdStrs } } as any);
+    routeClusters.sort((a, b) => (a.distanceFromHqKm || 0) - (b.distanceFromHqKm || 0));
+
+    route.clusterIds = routeClusters.map(c => c._id) as any;
+    await route.save();
+  }
+
+  // Update Cluster database records
+  for (const cluster of allClusters) {
+    const routeIdStrs = Array.from(clusterToRoutesMap.get(cluster._id.toString()) || []);
+    cluster.routeIds = routeIdStrs as any;
+    cluster.isSharedHub = routeIdStrs.length > 1;
+
+    if (routeIdStrs.length > 0) {
+      const primaryRouteId = routeIdStrs[0];
+      const primaryRoute = allRoutes.find(r => r._id.toString() === primaryRouteId);
+      if (primaryRoute) {
+        const idx = primaryRoute.clusterIds.findIndex(id => id.toString() === cluster._id.toString());
+        if (idx !== -1) {
+          cluster.routeOrderIndex = idx + 1;
+        }
+      }
+    }
+    await cluster.save();
+  }
 }
 
 export async function regenerateAllClustersAndRoutes(): Promise<void> {
@@ -258,23 +357,21 @@ export async function regenerateAllClustersAndRoutes(): Promise<void> {
 
   const allClinics = await Clinic.find();
   if (allClinics.length === 0) {
-    // If no clinics, clear clusters and routes
     await Cluster.deleteMany({});
     await Route.deleteMany({});
     return;
   }
 
-  // Reset all clusters and routes
   await Cluster.deleteMany({});
   await Route.deleteMany({});
 
-  // Sort clinics by creation date or ID to maintain some determinism
   allClinics.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
 
-  // Re-run clinic assignment for every single clinic
   for (const clinic of allClinics) {
     const { clusterId } = await assignClinicToClusterAndRoute(clinic.name, clinic.lat, clinic.lng);
     clinic.clusterId = clusterId as any;
     await clinic.save();
   }
+
+  await updateAllRouteClusterIntersections();
 }

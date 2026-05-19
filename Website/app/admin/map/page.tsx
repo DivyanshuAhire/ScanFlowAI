@@ -25,6 +25,7 @@ export default function AdminMapPage() {
   const [showRoutes, setShowRoutes] = useState(true);
   const [showClusters, setShowClusters] = useState(true);
   const [showClinics, setShowClinics] = useState(true);
+  const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
 
   async function fetchSpatialData() {
     try {
@@ -193,6 +194,51 @@ export default function AdminMapPage() {
               </label>
             </div>
           </div>
+
+          {/* Route Selection Highlight Focus */}
+          <div className="space-y-3 border-t border-slate-100 pt-6">
+            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+              <Layers className="h-3.5 w-3.5" /> Route focus
+            </h3>
+            
+            <div className="space-y-1.5">
+              <button
+                onClick={() => setSelectedRouteId(null)}
+                className={`w-full py-2 px-3 rounded-xl text-xs font-semibold flex items-center justify-between transition-all border cursor-pointer ${
+                  selectedRouteId === null
+                    ? 'bg-slate-900 text-white border-transparent shadow-sm'
+                    : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                <span>All Routes</span>
+                <span className="text-[10px] opacity-75">({routes.length})</span>
+              </button>
+
+              {routes.map((route) => {
+                const isSelected = selectedRouteId === route._id;
+                return (
+                  <button
+                    key={route._id}
+                    onClick={() => setSelectedRouteId(isSelected ? null : route._id)}
+                    className={`w-full py-2 px-3 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all border cursor-pointer ${
+                      isSelected
+                        ? 'bg-slate-50 border-slate-900 shadow-sm text-slate-900 font-extrabold'
+                        : 'bg-white border-slate-100 hover:border-slate-300 text-slate-600 hover:bg-slate-50/50'
+                    }`}
+                  >
+                    <div 
+                      className="w-3 h-3 rounded-full shrink-0 border" 
+                      style={{ backgroundColor: route.color || '#3b82f6', borderColor: isSelected ? '#000' : 'transparent' }}
+                    />
+                    <span className="flex-1 text-left truncate">{route.name}</span>
+                    <span className="text-[10px] text-slate-400 font-medium">
+                      {route.clusterIds?.length || 0} clusters
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
 
         {/* Informative Legend Alert Box */}
@@ -226,6 +272,7 @@ export default function AdminMapPage() {
           routesData={routes}
           clustersData={clusters}
           clinicsData={clinics}
+          selectedRouteId={selectedRouteId}
         />
       </div>
 
