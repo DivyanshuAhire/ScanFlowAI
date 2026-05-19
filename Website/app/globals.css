@@ -1,0 +1,87 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #1E3A5F;     /* Deep Navy */
+  --color-accent: #0EA5E9;      /* Sky Blue */
+  --color-success: #22C55E;     /* Green - BEST slot */
+  --color-danger: #EF4444;      /* Red - TAKEN slot */
+  --color-warning: #F59E0B;     /* Amber - warnings */
+  --color-surface: #F8FAFC;     /* Light surface */
+  --color-text: #0F172A;        /* Dark text */
+  --color-brand-blue-50: #F0F9FF;
+  --color-brand-blue-100: #E0F2FE;
+  --color-brand-blue-500: #0EA5E9;
+  --color-brand-blue-600: #0284C7;
+  --color-brand-blue-900: #0C4A6E;
+  
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+:root {
+  --background: #f8fafc;
+  --foreground: #0f172a;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+}
+
+/* Custom premium scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Leaflet Map Customizations */
+.leaflet-container {
+  font-family: var(--font-sans) !important;
+  border-radius: 12px;
+  z-index: 1;
+}
+
+/* Glassmorphism Styles */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.glass-panel-dark {
+  background: rgba(15, 23, 42, 0.8);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Subtle pulse animation for best slots */
+@keyframes soft-pulse {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4);
+  }
+  50% {
+    transform: scale(1.02);
+    box-shadow: 0 0 12px 4px rgba(34, 197, 94, 0.2);
+  }
+}
+
+.best-slot-pulse {
+  animation: soft-pulse 2s infinite ease-in-out;
+}
