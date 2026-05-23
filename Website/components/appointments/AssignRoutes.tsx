@@ -38,7 +38,7 @@ interface PreviewData {
   totalWarnings: number;
 }
 
-export default function OperatorAssignPage() {
+export default function AssignRoutes() {
   const [selectedDate, setSelectedDate] = useState(format(addDays(new Date(), 1), 'yyyy-MM-dd'));
   const [preview, setPreview] = useState<PreviewData | null>(null);
   

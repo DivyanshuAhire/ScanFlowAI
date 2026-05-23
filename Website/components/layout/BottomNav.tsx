@@ -32,9 +32,7 @@ export default function BottomNav() {
       case 'COMPANY_OPERATOR':
         return [
           { name: 'Dashboard', href: '/operator/dashboard', icon: LayoutDashboard },
-          { name: 'Book', href: '/operator/book', icon: CalendarPlus },
           { name: 'Appts', href: '/operator/appointments', icon: ClipboardList },
-          { name: 'Assign', href: '/operator/assign', icon: CalendarDays },
         ];
       case 'CLINIC_OPERATOR':
         return [

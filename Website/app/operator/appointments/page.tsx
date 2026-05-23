@@ -12,9 +12,15 @@ import {
   User,
   Clock,
   Activity,
-  AlertCircle
+  AlertCircle,
+  Search,
+  Plus,
+  Compass,
+  X
 } from 'lucide-react';
 import { format } from 'date-fns';
+import BookingWizard from '@/components/booking/BookingWizard';
+import AssignRoutes from '@/components/appointments/AssignRoutes';
 
 interface Appointment {
   _id: string;
@@ -43,6 +49,12 @@ export default function OperatorAppointmentsPage() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [isLoading, setIsLoading] = useState(true);
+
+  // Unified Dashboard States
+  const [showBookingModal, setShowBookingModal] = useState(false);
+  const [showAssignModal, setShowAssignModal] = useState(false);
+  const [clinicSearch, setClinicSearch] = useState('');
+  const [employeeSearch, setEmployeeSearch] = useState('');
 
   async function fetchAppointments() {
     setIsLoading(true);
@@ -101,20 +113,70 @@ export default function OperatorAppointmentsPage() {
     }
   };
 
+  const filteredAppointments = appointments.filter(appt => {
+    const matchClinic = appt.clinicId?.name.toLowerCase().includes(clinicSearch.toLowerCase());
+    const matchEmployee = employeeSearch 
+      ? appt.assignedEmployeeId?.name?.toLowerCase().includes(employeeSearch.toLowerCase()) 
+      : true;
+    return matchClinic && matchEmployee;
+  });
+
   return (
-    <div className="space-y-8 animate-fade-in text-slate-800">
+    <div className="space-y-8 animate-fade-in text-slate-800 relative">
       
-      {/* Title & Date Selector */}
+      {/* Title & Actions */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
-            <ClipboardList className="h-7 w-7 text-accent" /> Scan Appointments
+            <ClipboardList className="h-7 w-7 text-accent" /> Appointment Dashboard
           </h1>
-          <p className="text-slate-500 text-sm mt-1">Audit, edit, and cancel scan bookings across all locations.</p>
+          <p className="text-slate-500 text-sm mt-1">Manage scan bookings and coordinate field assignments.</p>
         </div>
         
-        {/* Date Filter */}
-        <div className="flex items-center gap-3 bg-white border border-slate-100 rounded-2xl pl-3 pr-4 py-2.5 shadow-sm">
+        {/* Actions */}
+        <div className="flex flex-wrap gap-3">
+          <button
+            onClick={() => setShowBookingModal(true)}
+            className="bg-sky-500 hover:bg-sky-600 text-white font-bold py-2.5 px-5 rounded-2xl shadow flex items-center gap-2 text-xs transition-all active:scale-[0.99]"
+          >
+            <Plus className="h-4 w-4" /> Book New Appointment
+          </button>
+          {(user?.role === 'ADMIN' || user?.role === 'COMPANY_OPERATOR') && (
+            <button
+              onClick={() => setShowAssignModal(true)}
+              className="bg-slate-900 hover:bg-slate-800 text-white font-bold py-2.5 px-5 rounded-2xl shadow flex items-center gap-2 text-xs transition-all active:scale-[0.99]"
+            >
+              <Compass className="h-4 w-4" /> Assign Routes
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Filters Section */}
+      <div className="flex flex-col sm:flex-row gap-4 bg-white border border-slate-100 rounded-3xl p-4 shadow-sm items-center">
+        <div className="flex items-center gap-2 flex-1 w-full bg-slate-50 rounded-2xl px-4 py-2.5 border border-slate-100">
+          <Search className="h-4.5 w-4.5 text-slate-400" />
+          <input
+            type="text"
+            placeholder="Search by Clinic..."
+            value={clinicSearch}
+            onChange={(e) => setClinicSearch(e.target.value)}
+            className="bg-transparent border-none focus:outline-none text-xs w-full text-slate-800 font-medium"
+          />
+        </div>
+        
+        <div className="flex items-center gap-2 flex-1 w-full bg-slate-50 rounded-2xl px-4 py-2.5 border border-slate-100">
+          <User className="h-4.5 w-4.5 text-slate-400" />
+          <input
+            type="text"
+            placeholder="Search by Employee..."
+            value={employeeSearch}
+            onChange={(e) => setEmployeeSearch(e.target.value)}
+            className="bg-transparent border-none focus:outline-none text-xs w-full text-slate-800 font-medium"
+          />
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0 bg-slate-50 border border-slate-100 rounded-2xl pl-3 pr-4 py-2.5">
           <CalendarDays className="h-4.5 w-4.5 text-slate-400" />
           <input
             type="date"
@@ -131,7 +193,7 @@ export default function OperatorAppointmentsPage() {
           <Loader2 className="h-8 w-8 text-accent animate-spin" />
           <span className="text-sm font-semibold text-slate-500">Retrieving Daily Appointments...</span>
         </div>
-      ) : appointments.length === 0 ? (
+      ) : filteredAppointments.length === 0 ? (
         <div className="bg-white border border-slate-100 rounded-3xl p-12 text-center space-y-4 shadow-sm">
           <ClipboardList className="h-12 w-12 text-slate-300 mx-auto" />
           <div>
@@ -154,7 +216,7 @@ export default function OperatorAppointmentsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-slate-700 font-medium">
-                {appointments.map((appt) => {
+                {filteredAppointments.map((appt) => {
                   const isAssigned = appt.status === 'ASSIGNED' || appt.status === 'COMPLETED';
                   // Hide cancel option for Operator if assigned (strict validation rules)
                   const cannotCancel = isAssigned && user?.role !== 'ADMIN';
@@ -207,6 +269,42 @@ export default function OperatorAppointmentsPage() {
                 })}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* Overlays / Modals */}
+      {showBookingModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="bg-slate-50 rounded-3xl w-full max-w-6xl max-h-[90vh] overflow-y-auto relative shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="sticky top-0 bg-white border-b border-slate-100 p-4 flex justify-between items-center z-10 rounded-t-3xl shadow-sm">
+              <h2 className="text-lg font-bold text-slate-800">Book Scan Appointment</h2>
+              <button onClick={() => setShowBookingModal(false)} className="p-2 bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-700 rounded-full transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6">
+              <BookingWizard onSuccess={() => {
+                setShowBookingModal(false);
+                fetchAppointments();
+              }} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showAssignModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="bg-slate-50 rounded-3xl w-full max-w-6xl max-h-[90vh] overflow-y-auto relative shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="sticky top-0 bg-white border-b border-slate-100 p-4 flex justify-between items-center z-10 rounded-t-3xl shadow-sm">
+              <h2 className="text-lg font-bold text-slate-800">Assign Routes</h2>
+              <button onClick={() => setShowAssignModal(false)} className="p-2 bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-700 rounded-full transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6">
+              <AssignRoutes />
+            </div>
           </div>
         </div>
       )}

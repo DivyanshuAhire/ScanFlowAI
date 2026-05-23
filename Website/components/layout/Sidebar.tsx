@@ -36,9 +36,7 @@ export default function Sidebar() {
       case 'COMPANY_OPERATOR':
         return [
           { name: 'Dashboard', href: '/operator/dashboard', icon: LayoutDashboard },
-          { name: 'Book Scan', href: '/operator/book', icon: CalendarPlus },
           { name: 'Appointments', href: '/operator/appointments', icon: ClipboardList },
-          { name: 'Assign Route', href: '/operator/assign', icon: CalendarDays },
           { name: 'Technicians', href: '/operator/employees', icon: UserCheck },
           { name: 'Scan Types', href: '/operator/scantypes', icon: Activity },
         ];
