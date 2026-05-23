@@ -119,6 +119,14 @@ export async function isDirectionForward(sourceCluster: any, targetCluster: any)
   return sourceOrder < targetOrder;
 }
 
+// Helper: Check if two clusters are on the same route (bidirectional - either direction allowed)
+export async function isOnSameRoute(sourceCluster: any, targetCluster: any): Promise<boolean> {
+  if (!sourceCluster?.routeIds || !targetCluster?.routeIds) return false;
+  
+  const sourceRouteIds = new Set(sourceCluster.routeIds.map((id: any) => id.toString()));
+  return targetCluster.routeIds.some((id: any) => sourceRouteIds.has(id.toString()));
+}
+
 // OSRM Road Distance Cache
 const osrmCache = new Map<string, number>();
 
@@ -343,9 +351,9 @@ export async function getSlotSuggestions(
     const A_clinic = A.clinicId as any;
     const A_cluster = A_clinic.clusterId;
 
-    // Rule 5 Direction enforcement
-    const isForward = await isDirectionForward(A_cluster, newClinicCluster);
-    if (!isForward) {
+    // Check if clusters are on the same route (allow both forward AND backward flows)
+    const samRoute = await isOnSameRoute(A_cluster, newClinicCluster);
+    if (!samRoute) {
       continue;
     }
 
@@ -417,12 +425,6 @@ export async function getSlotSuggestions(
     for (const B of otherRouteAppointments) {
       const B_clinic = B.clinicId as any;
       const B_cluster = B_clinic.clusterId;
-
-      // Rule 5 Direction enforcement
-      const isForward = await isDirectionForward(B_cluster, newClinicCluster);
-      if (!isForward) {
-        continue;
-      }
 
       const distKm = await getCachedRoadDistance(
         { lat: B_cluster.centroidLat, lng: B_cluster.centroidLng },
