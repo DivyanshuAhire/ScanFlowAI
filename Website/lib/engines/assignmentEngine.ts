@@ -46,6 +46,11 @@ async function canTravelBetweenClusters(
   fromAppt: any,
   toApptSlotMins: number
 ): Promise<boolean> {
+  // Allow zero travel time for sibling subclusters (share same parent)
+  if (fromCluster.parentCluster && toCluster.parentCluster && fromCluster.parentCluster.toString() === toCluster.parentCluster.toString()) {
+    return true;
+  }
+  let feasible = true;
   try {
     const distKm = haversineDistanceMeters(
       fromCluster.centroidLat, fromCluster.centroidLng,
@@ -57,11 +62,12 @@ async function canTravelBetweenClusters(
     const earliestArrivalMins = fromApptEndMins + travelMins;
 
     // Can arrive by target slot with buffer?
-    return earliestArrivalMins <= toApptSlotMins + TRAVEL_FEASIBILITY_BUFFER;
+    feasible = earliestArrivalMins <= toApptSlotMins + TRAVEL_FEASIBILITY_BUFFER;
   } catch (e) {
     // If distance calc fails, assume feasible (error on side of permissiveness)
-    return true;
+    feasible = true;
   }
+  return feasible;
 }
 
 // Helper: Validate entire schedule for an employee is feasible (consecutive appointments reachable)
@@ -244,40 +250,58 @@ export async function computeDailyAssignments(
     routeAppts.sort((a, b) => timeToMinutes(a.slotTime) - timeToMinutes(b.slotTime));
 
     // Find best employee for this route
-    // Prefer: not already on another route, or least loaded overall
+    // Prefer employees not already assigned to a different route, but allow reassignment if feasible
     const sortedEmployees = [...activeEmployees]
-      .filter(emp => !employeeRoutes[emp._id.toString()] || employeeRoutes[emp._id.toString()] === rId)
       .sort((a, b) => {
+        const routeA = employeeRoutes[a._id.toString()];
+        const routeB = employeeRoutes[b._id.toString()];
+        // Employees without a route are preferred
+        if (!routeA && routeB) return -1;
+        if (routeA && !routeB) return 1;
+        // If both have routes, prefer same route as current rId
+        if (routeA === rId && routeB !== rId) return -1;
+        if (routeB === rId && routeA !== rId) return 1;
+        // Otherwise, prefer the less loaded employee
         const countA = employeeAssignments[a._id.toString()]?.length || 0;
         const countB = employeeAssignments[b._id.toString()]?.length || 0;
         return countA - countB;
       });
 
-    if (sortedEmployees.length > 0) {
-      const assignedEmpId = sortedEmployees[0]._id.toString();
+    // Determine parent cluster ID of target route appointments (assume all share same parent)
+    const targetParentId = routeAppts[0]?.clinicId?.clusterId?.parentCluster?.toString() || null;
+
+    let assignedEmpId: string | null = null;
+    // First try employees who already have an appointment in the same parent cluster
+    for (const emp of sortedEmployees) {
+      const empIdStr = emp._id.toString();
+      const hasParent = employeeAssignments[empIdStr].some(appt => {
+        const cl = (appt.clinicId as any)?.clusterId;
+        return cl?.parentCluster?.toString() === targetParentId;
+      });
+      if (hasParent) {
+        const candidate = [...employeeAssignments[empIdStr], ...routeAppts];
+        if (await isScheduleFeasible(candidate)) {
+          assignedEmpId = empIdStr;
+          break;
+        }
+      }
+    }
+    // Fallback to regular sorted order if no same-parent tech works
+    if (!assignedEmpId && sortedEmployees.length > 0) {
+      for (const emp of sortedEmployees) {
+        const empIdStr = emp._id.toString();
+        const candidate = [...employeeAssignments[empIdStr], ...routeAppts];
+        if (await isScheduleFeasible(candidate)) {
+          assignedEmpId = empIdStr;
+          break;
+        }
+      }
+    }
+
+    if (assignedEmpId) {
       employeeRoutes[assignedEmpId] = rId;
-
-      // Check if entire route is feasible for this employee
-      const candidateAppts = [...employeeAssignments[assignedEmpId], ...routeAppts];
-      const isFeasible = await isScheduleFeasible(candidateAppts);
-
-      if (isFeasible) {
-        for (const appt of routeAppts) {
-          employeeAssignments[assignedEmpId].push(appt);
-        }
-      } else {
-        // Try next employees
-        for (let i = 1; i < sortedEmployees.length; i++) {
-          const empId = sortedEmployees[i]._id.toString();
-          const candidateList = [...employeeAssignments[empId], ...routeAppts];
-          if (await isScheduleFeasible(candidateList)) {
-            employeeRoutes[empId] = rId;
-            for (const appt of routeAppts) {
-              employeeAssignments[empId].push(appt);
-            }
-            break;
-          }
-        }
+      for (const appt of routeAppts) {
+        employeeAssignments[assignedEmpId].push(appt);
       }
     }
   }

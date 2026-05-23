@@ -278,7 +278,8 @@ export async function getSlotSuggestions(
     const apptClinic = appt.clinicId as any;
     const apptCluster = apptClinic?.clusterId;
     if (!apptCluster) return false;
-    return apptCluster._id.toString() === newClinicCluster._id.toString();
+    // Consider appointments in the same cluster family (including subclusters)
+    return familyIds.includes(apptCluster._id.toString());
   });
 
   for (const appt of rule1Appointments) {
@@ -528,14 +529,13 @@ export async function assignProvisionalEmployee(
       const apptClinic = appt.clinicId as any;
       const apptCluster = apptClinic?.clusterId;
       if (!apptCluster) return false;
-      
       const intersects = routeIdsIntersect(apptCluster.routeIds, routeIds);
-      const hasSuggestedEmp = appt.suggestedByEmployeeId !== undefined && appt.suggestedByEmployeeId !== null;
-      return intersects && hasSuggestedEmp;
+      const hasAnyEmp = (appt.suggestedByEmployeeId ?? appt.assignedEmployeeId) !== undefined && (appt.suggestedByEmployeeId ?? appt.assignedEmployeeId) !== null;
+      return intersects && hasAnyEmp;
     });
 
     if (continuityAppt) {
-      provisionalEmpId = continuityAppt.suggestedByEmployeeId!.toString();
+      provisionalEmpId = (continuityAppt.suggestedByEmployeeId ?? continuityAppt.assignedEmployeeId)!.toString();
     }
   }
 
