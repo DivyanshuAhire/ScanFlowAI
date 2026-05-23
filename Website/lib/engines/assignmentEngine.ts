@@ -5,9 +5,13 @@ import { Route } from '../db/models/Route';
 import { Cluster } from '../db/models/Cluster';
 import { Clinic } from '../db/models/Clinic';
 import { Assignment } from '../db/models/Assignment';
-import { getRoadRoute } from '../osrm/client';
+import { getRoadRoute, getRoadDistance } from '../osrm/client';
 import { timeToMinutes, minutesToTime } from './slotSuggestor';
 import { haversineDistanceMeters } from './clusterEngine';
+
+// Travel time calculation: distance in km * 3 (minutes per km, ~20 km/h average)
+const MINUTES_PER_KM = 3;
+const TRAVEL_FEASIBILITY_BUFFER = 15; // minutes grace period
 
 export interface EmployeeSheetAppt {
   appointmentId: string;
@@ -35,6 +39,62 @@ export interface AssignmentPreviewResult {
   totalWarnings: number;
 }
 
+// Helper: Check if technician can travel from one cluster to another in time
+async function canTravelBetweenClusters(
+  fromCluster: any,
+  toCluster: any,
+  fromAppt: any,
+  toApptSlotMins: number
+): Promise<boolean> {
+  try {
+    const distKm = haversineDistanceMeters(
+      fromCluster.centroidLat, fromCluster.centroidLng,
+      toCluster.centroidLat, toCluster.centroidLng
+    ) / 1000; // convert to km
+
+    const travelMins = Math.round(distKm * MINUTES_PER_KM);
+    const fromApptEndMins = timeToMinutes(fromAppt.slotTime) + fromAppt.durationMins;
+    const earliestArrivalMins = fromApptEndMins + travelMins;
+
+    // Can arrive by target slot with buffer?
+    return earliestArrivalMins <= toApptSlotMins + TRAVEL_FEASIBILITY_BUFFER;
+  } catch (e) {
+    // If distance calc fails, assume feasible (error on side of permissiveness)
+    return true;
+  }
+}
+
+// Helper: Validate entire schedule for an employee is feasible (consecutive appointments reachable)
+async function isScheduleFeasible(
+  employeeAppointments: any[]
+): Promise<boolean> {
+  if (employeeAppointments.length <= 1) return true;
+
+  const sorted = [...employeeAppointments].sort((a, b) => 
+    timeToMinutes(a.slotTime) - timeToMinutes(b.slotTime)
+  );
+
+  for (let i = 1; i < sorted.length; i++) {
+    const prev = sorted[i - 1];
+    const curr = sorted[i];
+    const prevClinic = prev.clinicId as any;
+    const currClinic = curr.clinicId as any;
+
+    if (prevClinic?.clusterId && currClinic?.clusterId) {
+      const canReach = await canTravelBetweenClusters(
+        prevClinic.clusterId,
+        currClinic.clusterId,
+        prev,
+        timeToMinutes(curr.slotTime)
+      );
+      if (!canReach) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
 // Main function to run the End-of-Day Assignment Engine
 export async function computeDailyAssignments(
   date: string,
@@ -43,7 +103,6 @@ export async function computeDailyAssignments(
   await connectToDatabase();
 
   // Step 1: Load and Group Data
-  // 1.1 Load all confirmed appointments for the date
   const appointments = await Appointment.find({
     date,
     status: { $in: ['CONFIRMED', 'ASSIGNED'] }
@@ -52,13 +111,19 @@ export async function computeDailyAssignments(
     populate: { path: 'clusterId' }
   }).populate('scanTypeId');
 
-  // 1.2 Load all active employees
   const activeEmployees = await Employee.find({ isActive: true });
   if (activeEmployees.length === 0) {
     throw new Error('No active employees found to assign.');
   }
 
-  // 1.3 Group appointments by Route
+  // Initialize employee assignments
+  const employeeAssignments: Record<string, any[]> = {};
+  const employeeRoutes: Record<string, string> = {};
+  for (const emp of activeEmployees) {
+    employeeAssignments[emp._id.toString()] = [];
+  }
+
+  // Step 2: Group appointments by route, then by cluster
   const routeGroups: Record<string, any[]> = {};
   const unroutedAppointments: any[] = [];
 
@@ -67,7 +132,6 @@ export async function computeDailyAssignments(
     const cluster = clinic?.clusterId;
     
     if (cluster && cluster.routeIds && cluster.routeIds.length > 0) {
-      // Use the first routeId
       const rId = cluster.routeIds[0].toString();
       if (!routeGroups[rId]) {
         routeGroups[rId] = [];
@@ -78,312 +142,223 @@ export async function computeDailyAssignments(
     }
   }
 
-  // Sort within route groups by slotTime ASC
+  // Sort appointments within each route by time
   for (const rId of Object.keys(routeGroups)) {
     routeGroups[rId].sort((a, b) => timeToMinutes(a.slotTime) - timeToMinutes(b.slotTime));
   }
 
-  // Set up employee assignment maps
-  // employeeId -> Array of appointments
-  const employeeAssignments: Record<string, any[]> = {};
-  for (const emp of activeEmployees) {
-    employeeAssignments[emp._id.toString()] = [];
-  }
+  // Step 3: Detect dense clusters (3+ consecutive bookings) and assign dedicated employees
+  const denseClustersAppts = new Set<string>();
+  const dedicatedEmployeeForCluster: Record<string, string> = {};
 
-  // Keep track of which employees are assigned to which route primarily
-  const employeeRoutes: Record<string, string> = {}; // employeeId -> routeId
-
-  // Step 2: Assign Primary Route Employee
-  for (const rId of Object.keys(routeGroups)) {
-    const groupAppts = routeGroups[rId];
-    
-    // Count suggested employee occurrences
-    const suggestionCounts: Record<string, number> = {};
-    for (const appt of groupAppts) {
-      if (appt.suggestedByEmployeeId) {
-        const empIdStr = appt.suggestedByEmployeeId.toString();
-        suggestionCounts[empIdStr] = (suggestionCounts[empIdStr] || 0) + 1;
-      }
-    }
-
-    // Pick employee with highest count
-    let primaryEmpId: string | null = null;
-    let maxCount = -1;
-
-    for (const empIdStr of Object.keys(suggestionCounts)) {
-      if (suggestionCounts[empIdStr] > maxCount) {
-        maxCount = suggestionCounts[empIdStr];
-        primaryEmpId = empIdStr;
-      }
-    }
-
-    // Tie or all null: pick any available employee with least total appointments today
-    if (!primaryEmpId) {
-      // Find active employee not yet primarily assigned to a route, or the one with least assignments
-      const sortedEmployees = [...activeEmployees].sort((a, b) => {
-        const countA = employeeAssignments[a._id.toString()].length;
-        const countB = employeeAssignments[b._id.toString()].length;
-        return countA - countB;
-      });
-      primaryEmpId = sortedEmployees[0]?._id.toString() || null;
-    }
-
-    if (primaryEmpId) {
-      employeeRoutes[primaryEmpId] = rId;
-      // Tentatively assign this primary employee to all appointments in this route group
-      for (const appt of groupAppts) {
-        employeeAssignments[primaryEmpId].push(appt);
-      }
-    }
-  }
-
-  // Step 3: Handle Cluster Density (3+ consecutive bookings in a cluster)
-  // Check each cluster's density
   const allClusters = await Cluster.find();
-  const mainClusters = allClusters.filter(c => !c.parentCluster);
-
-  for (const mainCluster of mainClusters) {
-    // Find all clinics in this main cluster and its subclusters
-    const relatedClusters = allClusters.filter(
-      c => c._id.toString() === mainCluster._id.toString() || c.parentCluster?.toString() === mainCluster._id.toString()
-    );
-    const relatedClusterIds = relatedClusters.map(c => c._id.toString());
-
-    // Filter appointments on this date in these clusters
-    const clusterAppts = appointments.filter(appt => {
+  for (const route of Object.values(routeGroups)) {
+    // Group route appointments by cluster
+    const clusterGroups: Record<string, any[]> = {};
+    for (const appt of route) {
       const clinic = appt.clinicId as any;
-      return clinic && relatedClusterIds.includes(clinic.clusterId?._id?.toString());
-    });
+      const cluster = clinic?.clusterId;
+      const clusterId = cluster?._id?.toString();
+      
+      if (clusterId) {
+        if (!clusterGroups[clusterId]) {
+          clusterGroups[clusterId] = [];
+        }
+        clusterGroups[clusterId].push(appt);
+      }
+    }
 
-    // Sort by time
-    clusterAppts.sort((a, b) => timeToMinutes(a.slotTime) - timeToMinutes(b.slotTime));
+    // Detect consecutive bookings in each cluster
+    for (const clusterId of Object.keys(clusterGroups)) {
+      const clusterAppts = clusterGroups[clusterId];
+      clusterAppts.sort((a, b) => timeToMinutes(a.slotTime) - timeToMinutes(b.slotTime));
 
-    // Detect blocks of 3+ consecutive slots
-    // Slots are consecutive if gap is exactly 1 hour (60 mins)
-    let consecutiveBlocks: any[][] = [];
-    let currentBlock: any[] = [];
-
-    for (let i = 0; i < clusterAppts.length; i++) {
-      if (currentBlock.length === 0) {
-        currentBlock.push(clusterAppts[i]);
-      } else {
-        const prevAppt = currentBlock[currentBlock.length - 1];
-        const prevMins = timeToMinutes(prevAppt.slotTime);
-        const currMins = timeToMinutes(clusterAppts[i].slotTime);
-
-        if (currMins - prevMins === 60) {
+      // Find consecutive blocks (1-hour gaps = consecutive)
+      let currentBlock: any[] = [];
+      for (let i = 0; i < clusterAppts.length; i++) {
+        if (currentBlock.length === 0) {
           currentBlock.push(clusterAppts[i]);
         } else {
-          if (currentBlock.length >= 3) {
-            consecutiveBlocks.push(currentBlock);
-          }
-          currentBlock = [clusterAppts[i]];
-        }
-      }
-    }
-    if (currentBlock.length >= 3) {
-      consecutiveBlocks.push(currentBlock);
-    }
+          const prevMins = timeToMinutes(currentBlock[currentBlock.length - 1].slotTime);
+          const currMins = timeToMinutes(clusterAppts[i].slotTime);
 
-    // Dedicate a technician to the high-density blocks
-    for (const block of consecutiveBlocks) {
-      // Find the technician primarily assigned to this block (the one with the most pre-existing assignments in it)
-      const empCounts: Record<string, number> = {};
-      for (const appt of block) {
-        for (const empIdStr of Object.keys(employeeAssignments)) {
-          if (employeeAssignments[empIdStr].some(a => a._id.toString() === appt._id.toString())) {
-            empCounts[empIdStr] = (empCounts[empIdStr] || 0) + 1;
-          }
-        }
-      }
-
-      let dedicatedEmpId = Object.keys(empCounts).sort((a, b) => empCounts[b] - empCounts[a])[0];
-
-      if (!dedicatedEmpId) {
-        // Pick any free employee
-        dedicatedEmpId = activeEmployees[0]._id.toString();
-      }
-
-      // Re-assign all appointments in this dense block to the dedicated employee
-      // Remove them from other employees' assignment lists
-      for (const appt of block) {
-        for (const empIdStr of Object.keys(employeeAssignments)) {
-          employeeAssignments[empIdStr] = employeeAssignments[empIdStr].filter(
-            a => a._id.toString() !== appt._id.toString()
-          );
-        }
-        employeeAssignments[dedicatedEmpId].push(appt);
-      }
-
-      // Check for isolated bookings in the same cluster (gap > 3hrs from last consecutive)
-      const consecutiveIds = block.map(a => a._id.toString());
-      const isolatedAppts = clusterAppts.filter(a => !consecutiveIds.includes(a._id.toString()));
-
-      for (const isolated of isolatedAppts) {
-        const isoMins = timeToMinutes(isolated.slotTime);
-        const firstBlockMins = timeToMinutes(block[0].slotTime);
-        const lastBlockMins = timeToMinutes(block[block.length - 1].slotTime);
-
-        const idleFromStart = firstBlockMins - isoMins;
-        const idleFromEnd = isoMins - (lastBlockMins + block[block.length - 1].durationMins);
-
-        // If the gap to the block is > 3 hours (180 mins)
-        if (idleFromStart > 180 || idleFromEnd > 180) {
-          // Do NOT assign the dedicated tech to this isolated one
-          // Remove it from the dedicated tech's list
-          employeeAssignments[dedicatedEmpId] = employeeAssignments[dedicatedEmpId].filter(
-            a => a._id.toString() !== isolated._id.toString()
-          );
-
-          // Find alternative tech
-          let altEmpId: string | null = null;
-
-          // Search criteria 1: Any tech whose last assignment of the day is at a cluster BEFORE C on the route at a time <= 15:00
-          for (const empIdStr of Object.keys(employeeAssignments)) {
-            if (empIdStr === dedicatedEmpId) continue;
-            
-            const empList = employeeAssignments[empIdStr];
-            if (empList.length > 0) {
-              empList.sort((a, b) => timeToMinutes(a.slotTime) - timeToMinutes(b.slotTime));
-              const lastAppt = empList[empList.length - 1];
-              const lastMins = timeToMinutes(lastAppt.slotTime);
-              
-              const lastCluster = (lastAppt.clinicId as any)?.clusterId;
-              const isoCluster = (isolated.clinicId as any)?.clusterId;
-
-              if (lastMins <= timeToMinutes('15:00') && lastCluster && isoCluster) {
-                const lastOrder = lastCluster.routeOrderIndex || 0;
-                const isoOrder = isoCluster.routeOrderIndex || 0;
-
-                if (isoOrder > lastOrder) {
-                  altEmpId = empIdStr;
-                  break;
-                }
+          if (currMins - prevMins === 60) {
+            currentBlock.push(clusterAppts[i]);
+          } else {
+            // End of consecutive block
+            if (currentBlock.length >= 3) {
+              // Found dense cluster! Mark all appointments in this block
+              for (const appt of currentBlock) {
+                denseClustersAppts.add(appt._id.toString());
               }
-            }
-          }
 
-          // Search criteria 2: Any tech on a nearby cross-route cluster (<= 5km) who is free at this time
-          if (!altEmpId) {
-            for (const empIdStr of Object.keys(employeeAssignments)) {
-              if (empIdStr === dedicatedEmpId) continue;
-
-              const empList = employeeAssignments[empIdStr];
-              const isFree = !empList.some(a => a.slotTime === isolated.slotTime);
-              
-              if (isFree && empList.length > 0) {
-                // Check distance
-                const lastAppt = empList[empList.length - 1];
-                const lastCluster = (lastAppt.clinicId as any)?.clusterId;
-                const isoCluster = (isolated.clinicId as any)?.clusterId;
-
-                if (lastCluster && isoCluster) {
-                  try {
-                    const roadDist = haversineDistanceMeters(
-                      lastCluster.centroidLat, lastCluster.centroidLng,
-                      isoCluster.centroidLat, isoCluster.centroidLng
-                    );
-                    if (roadDist <= 5000) { // 5km in meters
-                      altEmpId = empIdStr;
-                      break;
-                    }
-                  } catch (e) {}
-                }
-              }
-            }
-          }
-
-          // Assign alternative if found
-          if (altEmpId) {
-            // Remove from other employees
-            for (const empIdStr of Object.keys(employeeAssignments)) {
-              employeeAssignments[empIdStr] = employeeAssignments[empIdStr].filter(
-                a => a._id.toString() !== isolated._id.toString()
+              // Assign dedicated employee (pick least loaded one)
+              const leastLoaded = Object.keys(employeeAssignments).reduce((empA, empB) =>
+                employeeAssignments[empA].length <= employeeAssignments[empB].length ? empA : empB
               );
+              dedicatedEmployeeForCluster[clusterId] = leastLoaded;
             }
-            employeeAssignments[altEmpId].push(isolated);
+            currentBlock = [clusterAppts[i]];
           }
         }
       }
+
+      // Check last block
+      if (currentBlock.length >= 3) {
+        for (const appt of currentBlock) {
+          denseClustersAppts.add(appt._id.toString());
+        }
+        const leastLoaded = Object.keys(employeeAssignments).reduce((empA, empB) =>
+          employeeAssignments[empA].length <= employeeAssignments[empB].length ? empA : empB
+        );
+        dedicatedEmployeeForCluster[clusterId] = leastLoaded;
+      }
     }
   }
 
-  // Step 4 & 5: Forward Direction Validation & Manual Re-routing + Fill Unassigned
-  const warningsList: string[] = [];
+  // Step 4: Assign dense cluster appointments to dedicated employees
+  for (const apptId of denseClustersAppts) {
+    const appt = appointments.find(a => a._id.toString() === apptId);
+    if (appt) {
+      const cluster = (appt.clinicId as any)?.clusterId;
+      const clusterId = cluster?._id?.toString();
+      const dedicatedEmpId = dedicatedEmployeeForCluster[clusterId!];
 
-  for (const empIdStr of Object.keys(employeeAssignments)) {
-    const list = employeeAssignments[empIdStr];
-    list.sort((a, b) => timeToMinutes(a.slotTime) - timeToMinutes(b.slotTime));
-
-    let hasBackwardJump = false;
-    for (let i = 1; i < list.length; i++) {
-      const prevCluster = (list[i-1].clinicId as any)?.clusterId;
-      const currCluster = (list[i].clinicId as any)?.clusterId;
-
-      if (prevCluster && currCluster) {
-        const prevOrder = prevCluster.routeOrderIndex || 0;
-        const currOrder = currCluster.routeOrderIndex || 0;
-
-        if (currOrder < prevOrder) {
-          hasBackwardJump = true;
-          const emp = activeEmployees.find(e => e._id.toString() === empIdStr);
-          warningsList.push(
-            `Backward jump detected for ${emp?.name || 'Technician'} at slot ${list[i].slotTime} (moving from cluster index ${prevOrder} to ${currOrder})`
-          );
+      if (dedicatedEmpId) {
+        employeeAssignments[dedicatedEmpId].push(appt);
+        // Set primary route for this employee if not already set
+        if (!employeeRoutes[dedicatedEmpId] && cluster?.routeIds?.length > 0) {
+          employeeRoutes[dedicatedEmpId] = cluster.routeIds[0].toString();
         }
       }
     }
   }
 
-  // Fill in any unassigned appointments
-  const unassignedList: { appointmentId: string; clinicName: string; slot: string }[] = [];
-  const allAssignedIds = new Set<string>();
-  for (const empIdStr of Object.keys(employeeAssignments)) {
-    for (const appt of employeeAssignments[empIdStr]) {
-      allAssignedIds.add(appt._id.toString());
-    }
-  }
+  // Step 5: Assign remaining appointments to route-flow employees
+  for (const rId of Object.keys(routeGroups)) {
+    const routeAppts = routeGroups[rId].filter(appt => !denseClustersAppts.has(appt._id.toString()));
 
-  for (const appt of appointments) {
-    if (!allAssignedIds.has(appt._id.toString())) {
-      // Find a technician who doesn't have a booking at this slot time
-      let assigned = false;
-      const slotMins = timeToMinutes(appt.slotTime);
+    if (routeAppts.length === 0) continue;
 
-      for (const empIdStr of Object.keys(employeeAssignments)) {
-        const empList = employeeAssignments[empIdStr];
-        const isFree = !empList.some(a => a.slotTime === appt.slotTime);
+    // Sort by time
+    routeAppts.sort((a, b) => timeToMinutes(a.slotTime) - timeToMinutes(b.slotTime));
 
-        if (isFree) {
-          // Check directionality:
-          // Prefer employees whose last assignment is on same route and order is less than this appt
-          empList.sort((a, b) => timeToMinutes(a.slotTime) - timeToMinutes(b.slotTime));
-          const lastAppt = empList[empList.length - 1];
-          const lastCluster = lastAppt ? (lastAppt.clinicId as any)?.clusterId : null;
-          const currCluster = (appt.clinicId as any)?.clusterId;
+    // Find best employee for this route
+    // Prefer: not already on another route, or least loaded overall
+    const sortedEmployees = [...activeEmployees]
+      .filter(emp => !employeeRoutes[emp._id.toString()] || employeeRoutes[emp._id.toString()] === rId)
+      .sort((a, b) => {
+        const countA = employeeAssignments[a._id.toString()]?.length || 0;
+        const countB = employeeAssignments[b._id.toString()]?.length || 0;
+        return countA - countB;
+      });
 
-          if (!lastAppt || (lastCluster && currCluster && (currCluster.routeOrderIndex || 0) >= (lastCluster.routeOrderIndex || 0))) {
-            employeeAssignments[empIdStr].push(appt);
-            allAssignedIds.add(appt._id.toString());
-            assigned = true;
+    if (sortedEmployees.length > 0) {
+      const assignedEmpId = sortedEmployees[0]._id.toString();
+      employeeRoutes[assignedEmpId] = rId;
+
+      // Check if entire route is feasible for this employee
+      const candidateAppts = [...employeeAssignments[assignedEmpId], ...routeAppts];
+      const isFeasible = await isScheduleFeasible(candidateAppts);
+
+      if (isFeasible) {
+        for (const appt of routeAppts) {
+          employeeAssignments[assignedEmpId].push(appt);
+        }
+      } else {
+        // Try next employees
+        for (let i = 1; i < sortedEmployees.length; i++) {
+          const empId = sortedEmployees[i]._id.toString();
+          const candidateList = [...employeeAssignments[empId], ...routeAppts];
+          if (await isScheduleFeasible(candidateList)) {
+            employeeRoutes[empId] = rId;
+            for (const appt of routeAppts) {
+              employeeAssignments[empId].push(appt);
+            }
             break;
           }
         }
       }
+    }
+  }
 
-      if (!assigned) {
-        const clinic = appt.clinicId as any;
-        unassignedList.push({
-          appointmentId: appt._id.toString(),
-          clinicName: clinic?.name || 'Unknown Clinic',
-          slot: appt.slotTime
-        });
+  // Step 6: Handle unrouted appointments
+  for (const appt of unroutedAppointments) {
+    let assigned = false;
+
+    // Try to find a free employee with feasible schedule
+    for (const empId of Object.keys(employeeAssignments)) {
+      const candidateList = [...employeeAssignments[empId], appt];
+      const isFeasible = await isScheduleFeasible(candidateList);
+
+      if (isFeasible) {
+        employeeAssignments[empId].push(appt);
+        assigned = true;
+        break;
+      }
+    }
+
+    // If not assigned, will be in unassigned list later
+  }
+
+  // Step 7: Validate assignments and collect warnings
+  const warningsList: string[] = [];
+
+  for (const empIdStr of Object.keys(employeeAssignments)) {
+    const list = employeeAssignments[empIdStr];
+    if (list.length === 0) continue;
+
+    list.sort((a, b) => timeToMinutes(a.slotTime) - timeToMinutes(b.slotTime));
+
+    // Check for backward jumps and travel feasibility
+    for (let i = 1; i < list.length; i++) {
+      const prev = list[i - 1];
+      const curr = list[i];
+      const prevCluster = (prev.clinicId as any)?.clusterId;
+      const currCluster = (curr.clinicId as any)?.clusterId;
+
+      if (prevCluster && currCluster) {
+        // Check backward jump
+        const prevOrder = prevCluster.routeOrderIndex || 0;
+        const currOrder = currCluster.routeOrderIndex || 0;
+
+        if (currOrder < prevOrder) {
+          const emp = activeEmployees.find(e => e._id.toString() === empIdStr);
+          warningsList.push(
+            `Backward jump for ${emp?.name}: slot ${curr.slotTime} (cluster order ${currOrder} < ${prevOrder})`
+          );
+        }
+
+        // Check travel feasibility
+        try {
+          const distKm = haversineDistanceMeters(
+            prevCluster.centroidLat, prevCluster.centroidLng,
+            currCluster.centroidLat, currCluster.centroidLng
+          ) / 1000;
+
+          const travelMins = Math.round(distKm * MINUTES_PER_KM);
+          const prevEndMins = timeToMinutes(prev.slotTime) + prev.durationMins;
+          const currStartMins = timeToMinutes(curr.slotTime);
+          const earliestArrival = prevEndMins + travelMins;
+
+          if (earliestArrival > currStartMins + TRAVEL_FEASIBILITY_BUFFER) {
+            const emp = activeEmployees.find(e => e._id.toString() === empIdStr);
+            const prevEnd = minutesToTime(prevEndMins);
+            const arrival = minutesToTime(earliestArrival);
+            warningsList.push(
+              `Travel conflict for ${emp?.name}: Cannot reach stop ${i+1} by ${curr.slotTime}. Ends ${prevEnd}, arrives ~${arrival} (${distKm.toFixed(1)}km)`
+            );
+          }
+        } catch (e) {
+          console.error('Error calculating travel feasibility:', e);
+        }
       }
     }
   }
 
-  // Step 6: Build Route Sheets
+  // Step 8: Build employee sheets and collect unassigned
   const employeeSheets: EmployeeSheet[] = [];
+  const allAssignedIds = new Set<string>();
 
   for (const emp of activeEmployees) {
     const empIdStr = emp._id.toString();
@@ -422,20 +397,17 @@ export async function computeDailyAssignments(
 
         if (prevCluster && cluster) {
           try {
-            // Synchronously wait / cache lookup for distance
             const roadResult = await getRoadRoute(
               { lat: prevCluster.centroidLat, lng: prevCluster.centroidLng },
               { lat: cluster.centroidLat, lng: cluster.centroidLng }
             );
 
             const distKm = roadResult.distanceKm;
-            const travelMins = Math.round(distKm * 3);
+            const travelMins = Math.round(distKm * MINUTES_PER_KM);
             travelFromPrevious = `~${travelMins} min (${distKm.toFixed(1)}km)`;
 
-            // Calculate Idle Gap
             const prevEndMins = timeToMinutes(prev.slotTime) + prev.durationMins;
             const currStartMins = timeToMinutes(curr.slotTime);
-            
             const gapMins = currStartMins - (prevEndMins + travelMins);
 
             if (gapMins > 0) {
@@ -443,18 +415,18 @@ export async function computeDailyAssignments(
               const gapRemainingMins = gapMins % 60;
               idleGap = `${gapHrs}h ${gapRemainingMins}m idle`;
 
-              // Flag warning if gap > 3hrs
               if (gapMins > 180) {
                 hasIdleGapWarning = true;
                 warnings.push(`Idle gap between stop ${i} and ${i+1} exceeds 3 hours (${idleGap})`);
               }
             }
           } catch (e) {
-            console.error('Error calculating path in sheet building:', e);
+            console.error('Error calculating path:', e);
           }
         }
       }
 
+      allAssignedIds.add(curr._id.toString());
       sheetAppts.push({
         appointmentId: curr._id.toString(),
         time: curr.slotTime,
@@ -468,9 +440,8 @@ export async function computeDailyAssignments(
       });
     }
 
-    // Step 8: Persist to DB if Confirm
+    // Persist if requested
     if (persist && list.length > 0) {
-      // Upsert Assignment document
       await Assignment.findOneAndUpdate(
         { employeeId: emp._id, date } as any,
         {
@@ -484,7 +455,6 @@ export async function computeDailyAssignments(
         { upsert: true }
       );
 
-      // Update each appointment status to ASSIGNED and lock employee
       for (const appt of list) {
         await Appointment.findByIdAndUpdate(appt._id, {
           status: 'ASSIGNED',
@@ -504,7 +474,19 @@ export async function computeDailyAssignments(
     });
   }
 
-  // Count final warnings
+  // Step 9: Collect unassigned
+  const unassignedList: { appointmentId: string; clinicName: string; slot: string }[] = [];
+  for (const appt of appointments) {
+    if (!allAssignedIds.has(appt._id.toString())) {
+      const clinic = appt.clinicId as any;
+      unassignedList.push({
+        appointmentId: appt._id.toString(),
+        clinicName: clinic?.name || 'Unknown Clinic',
+        slot: appt.slotTime
+      });
+    }
+  }
+
   const totalWarnings = warningsList.length + employeeSheets.reduce((sum, s) => sum + s.warnings.length, 0);
 
   return {

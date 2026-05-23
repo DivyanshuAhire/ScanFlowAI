@@ -362,6 +362,23 @@ export async function getSlotSuggestions(
       const empIdObj = A.assignedEmployeeId ?? A.suggestedByEmployeeId ?? null;
       if (empIdObj) {
         const empId = empIdObj.toString();
+
+        // Check for conflicts during travel time window
+        let hasTravelConflict = false;
+        const busySlots = busyMap.get(empId) || new Set<string>();
+        for (const busySlot of busySlots) {
+          const busySlotMins = timeToMinutes(busySlot);
+          // If appointment is scheduled during travel [freeAtMins, arrivalMins), skip
+          if (busySlotMins >= freeAtMins && busySlotMins < arrivalMins) {
+            hasTravelConflict = true;
+            break;
+          }
+        }
+
+        if (hasTravelConflict) {
+          continue;
+        }
+
         if (isEmployeeBusy(busyMap, empId, suggestedSlot)) {
           continue;
         }
@@ -414,12 +431,31 @@ export async function getSlotSuggestions(
 
       if (distKm <= 5) {
         const freeAtMins = timeToMinutes(B.slotTime) + B.durationMins;
-        const adjacentSlot = roundUpToNextSlot(freeAtMins + 10);
+        const travelMins = Math.round(distKm * 3);
+        const arrivalMins = freeAtMins + travelMins + 10;
+        const adjacentSlot = roundUpToNextSlot(arrivalMins);
 
         if (adjacentSlot !== null && !takenSlots.has(adjacentSlot)) {
           const empIdObj = B.assignedEmployeeId ?? B.suggestedByEmployeeId ?? null;
           if (empIdObj) {
             const empId = empIdObj.toString();
+
+            // Check for conflicts during travel time window
+            let hasTravelConflict = false;
+            const busySlots = busyMap.get(empId) || new Set<string>();
+            for (const busySlot of busySlots) {
+              const busySlotMins = timeToMinutes(busySlot);
+              // If appointment is scheduled during travel [freeAtMins, arrivalMins), skip
+              if (busySlotMins >= freeAtMins && busySlotMins < arrivalMins) {
+                hasTravelConflict = true;
+                break;
+              }
+            }
+
+            if (hasTravelConflict) {
+              continue;
+            }
+
             if (isEmployeeBusy(busyMap, empId, adjacentSlot)) {
               continue;
             }
